@@ -1,0 +1,12 @@
+pandas
+numpy
+yfinance
+requests
+selenium
+openpyxl
+holidays
+webdriver-manager
+lxml
+beautifulsoup4
+html5lib
+xlrd
