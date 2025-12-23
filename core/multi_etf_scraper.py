@@ -245,23 +245,16 @@ def print_final_summary(all_results):
         print("\nAll scrapers completed successfully!")
     print("="*60 + "\n")
 
-def main():
-    """Main entry point for multi-ETF scraping."""
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--format", choices=["csv","xlsx"])
-    parser.add_argument("--headless", action="store_true")
-    args = parser.parse_args()
-    
+def run(headless=True, save_format=None):
+    """Execution logic for multi-ETF scraping."""
     global SAVE_FORMAT, HEADLESS
-    if args.format: 
-        # Update via helpers would be better if we had a setter, 
-        # but for now we rely on the global being shared or re-imported.
-        # Actually, it's better to pass it down.
-        pass
-
+    if save_format:
+        SAVE_FORMAT = save_format
+    
     os.makedirs(CSV_DIR, exist_ok=True)
     os.makedirs(JSON_DIR, exist_ok=True)
-    driver = setup_driver(args.headless)
+    
+    driver = setup_driver(headless)
     all_results = {}
     try:
         for site in SITES_CONFIG:
@@ -269,9 +262,22 @@ def main():
         final_directory_cleanup()
         print_final_summary(all_results)
         return True
+    except Exception as e:
+        print(f"[CRITICAL] Multi-scraper execution failed: {e}")
+        return False
     finally:
         try: driver.quit()
         except: pass
+
+def main():
+    """CLI entry point for multi-ETF scraping."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--format", choices=["csv","xlsx"], help="Output format (csv or xlsx)")
+    parser.add_argument("--headless", action="store_true", default=True, help="Run in headless mode (default)")
+    parser.add_argument("--no-headless", action="store_false", dest="headless", help="Run with visible window")
+    args = parser.parse_args()
+    
+    return run(headless=args.headless, save_format=args.format)
 
 if __name__ == "__main__":
     main()

@@ -7,9 +7,10 @@ A robust, modular Python pipeline for scraping, processing, and aggregating Bitc
 ```bash
 .
 ├── etfs_data/
-│   ├── csv/               # CSV & XLSX outputs
-│   └── json/              # JSON outputs
-├── main.py                # Single entry point for the pipeline
+│   ├── csv/               # Individual ETF CSV/XLSX raw data
+│   ├── json/              # Individual ETF JSON raw data
+│   └── etfs_completo/     # Final aggregated & processed files
+├── main.py                # Main entry point with modular flags
 └── requirements.txt       # Project dependencies
 ```
 
@@ -17,12 +18,12 @@ A robust, modular Python pipeline for scraping, processing, and aggregating Bitc
 
 - **Automated Scraping**: Fetches data from major ETF providers (BlackRock, Fidelity, Grayscale, ARK, 21Shares, etc.) and CoinMarketCap.
 - **Data Normalization**: Translates raw data into a consistent English format, handling various date and numeric styles.
+- **Modular Pipeline**: Execute the full pipeline or specific phases (Individual sites, CMC, or Data Builder).
 - **Smart Aggregation**:
   - Calculates **Holdings (BTC)** using initial seeds and daily flows.
   - Estimates **Shares Outstanding** and **NAV** where data is missing using multi-weighted strategies.
   - Propagates data to **weekends and holidays** based on local market calendars (US/HK).
-- **Stealth Selenium**: Configured to mimic real browser behavior with retries, jitter, and headless support.
-- **Multiple Output Formats**: Generates both flat CSVs and a structured JSON for easy integration.
+- **Multiple Output Formats**: Generates both flat CSVs and structured JSON for easy integration.
 
 ## Installation
 
@@ -41,28 +42,30 @@ A robust, modular Python pipeline for scraping, processing, and aggregating Bitc
 
 ## Usage
 
-Run the entire pipeline sequentially:
+The `main.py` entry point supports several modular execution flags:
 
 ```bash
-python main.py
-```
+# Run the entire pipeline (Scrapers -> CMC -> Building)
+python main.py --all
 
-This will:
-1. Run all individual ETF scrapers sequentially.
-2. Scrape Bitcoin ETF flows from CoinMarketCap.
-3. Build the final aggregated dataset.
+# Run only the individual ETF site scrapers
+python main.py --sites
 
-### Standalone Scrapers
-You can also run individual scrapers for testing:
-```bash
-python core/scrapers/scraper_fidelity.py
+# Run only the CoinMarketCap flows scraper
+python main.py --cmc
+
+# Run only the Data Builder & Aggregator (uses existing raw data)
+python main.py --build
+
+# Run in an interactive window (not headless)
+python main.py --no-headless
 ```
 
 ## Output
 
-The final processed data is saved in:
-- `etfs_data/bitcoin_etf_completo.csv`: Flat table containing all ETFs and calculated metrics.
-- `etfs_data/bitcoin_etf_completo_estructurado.json`: Documentation-rich JSON for developers.
+The final processed data is saved in `etfs_data/etfs_completo/`:
+- `bitcoin_etf_completo.csv`: Flat table containing all ETFs and calculated metrics.
+- `bitcoin_etf_completo_estructurado.json`: Documentation-rich JSON for developers.
 
 ## Environment Variables
 
