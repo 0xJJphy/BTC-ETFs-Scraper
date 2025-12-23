@@ -16,7 +16,7 @@ A robust, modular Python pipeline for scraping, processing, and aggregating Bitc
 │   │   └── helpers.py     # Common utilities (Selenium, HTTP, IO)
 │   ├── multi_etf_scraper.py   # Multi-site scraper orchestrator
 │   └── data_builder.py        # Core data processing & aggregation engine
-├── etfs_data/             # Data storage (CSVs, JSONs)
+├── etfs_data/             # Scraped data (Direct NAVs, CMC Flows, Final Aggregates)
 ├── main.py                # Single entry point for the pipeline
 └── requirements.txt       # Project dependencies
 ```

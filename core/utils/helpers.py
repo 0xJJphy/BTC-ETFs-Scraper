@@ -27,7 +27,7 @@ import yfinance as yf
 # ======================== BASE CONFIGURATION ========================
 
 # Default output directory for individual ETF CSVs
-OUTPUT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../etfs_data/DATA_SCRAPPED/ETF-DIRECT-NAV/csv"))
+OUTPUT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../etfs_data"))
 HEADLESS   = False
 TIMEOUT    = 45
 

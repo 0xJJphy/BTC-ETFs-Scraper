@@ -37,7 +37,7 @@ def main():
         sys.exit(1)
 
     # Step 2: CoinMarketCap Flows Scraper
-    output_cmc = os.path.join("etfs_data", "DATA_SCRAPPED", "CMC-FLOWS", "csv", "cmc_bitcoin_etf_flows_btc.csv")
+    output_cmc = os.path.join("etfs_data", "cmc_bitcoin_etf_flows_btc.csv")
     def run_cmc():
         driver = setup_driver(headless=True)
         try:
