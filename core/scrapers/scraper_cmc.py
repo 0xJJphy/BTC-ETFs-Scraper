@@ -256,6 +256,10 @@ def process_cmc_flows(driver, base_name="cmc_bitcoin_etf_flows_btc"):
             return False, "No rows could be scraped from CoinMarketCap."
             
         df = pd.DataFrame(rows)
+        # Standardize the first column (usually 'Time') to 'date'
+        if not df.empty and len(df.columns) > 0:
+            df.rename(columns={df.columns[0]: "date"}, inplace=True)
+            
         # Use common save helper for dual output
         save_dataframe(df, base_name)
         return True, None

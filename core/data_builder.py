@@ -13,12 +13,13 @@ import holidays
 BASE_DIR        = "./etfs_data"
 CSV_DIR         = os.path.join(BASE_DIR, "csv")
 JSON_DIR        = os.path.join(BASE_DIR, "json")
+FINAL_DIR       = os.path.join(BASE_DIR, "etfs_completo")
 
 OUTPUT_CSV      = os.path.join(CSV_DIR, "cmc_bitcoin_etf_flows_btc.csv")
 OUTPUT_JSON     = os.path.join(JSON_DIR, "cmc_bitcoin_etf_flows_btc.json")
 
-COMPLETE_FILE   = os.path.join(CSV_DIR, "bitcoin_etf_completo.csv")
-STRUCT_JSON     = os.path.join(JSON_DIR, "bitcoin_etf_completo_estructurado.json")
+COMPLETE_FILE   = os.path.join(FINAL_DIR, "bitcoin_etf_completo.csv")
+STRUCT_JSON     = os.path.join(FINAL_DIR, "bitcoin_etf_completo_estructurado.json")
 
 ETF_DIRECT_DIR  = os.getenv("ETF_DIRECT_DIR", CSV_DIR)
 
@@ -386,7 +387,7 @@ def add_etf_yf_close_volume(df: pd.DataFrame) -> pd.DataFrame:
         close_col, vol_col = f"CLOSE-{etf}", f"{etf}-VOLUMEN"
         if close_col not in out.columns: out[close_col] = np.nan
         if vol_col   not in out.columns: out[vol_col]   = np.nan
-        print(f"[YF] {etf} ({tkr}) {dmin}..{dmax}")
+        print(f"[YF] {etf} ({tkr}) {dmin}..{dmax} -> [DONE]")
         hist = fetch_history_one(tkr, dmin, dmax)
         if hist.empty: continue
         mask = out["date"].isin(hist.index)
@@ -547,7 +548,8 @@ def estimate_nav_and_shares_trading_days(df: pd.DataFrame, etf: str, etf_start_d
             if est_shr: out.at[idx, shr_col] = est_shr
             count += 1
             
-    if count > 0: print(f"[NAV-EST] {etf}: Estimated {count} trading days")
+    if count > 0: print(f"[NAV-EST] {etf}: Estimated {count} trading days -> [DONE]")
+    else: print(f"[NAV-EST] {etf}: No estimation needed -> [DONE]")
     return out
 
 def estimate_missing_shares(df: pd.DataFrame) -> pd.DataFrame:
@@ -563,44 +565,71 @@ def estimate_missing_shares(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 def propagate_weekend_holidays_data(df: pd.DataFrame) -> pd.DataFrame:
-    """Propagate values from last trading day to weekends and holidays."""
+    """
+    Propagates business day data to weekends and holidays per market (US/HK).
+    Matches the logic from build_etf_data.py for consistency.
+    """
     out = df.copy()
     out["date"] = pd.to_datetime(out["date"], errors="coerce").dt.normalize()
     out = out.sort_values("date")
-    print(f"\n[PROPAGATE] Filling weekends and holidays...")
+    
+    print(f"\n[PROPAGATE] Starting propagation for weekends and holidays")
     
     for etf in ETF_LIST:
         market = market_of_etf(etf)
-        start = first_active_date(out, etf)
-        if start is None: continue
+        etf_start_date = first_active_date(out, etf)
+        
+        if etf_start_date is None:
+            print(f"[PROPAGATE] {etf}: No start date found, skipping")
+            continue
             
-        nav_col, close_col, vol_col, hold_col, shr_col = f"{etf}-NAVSHARE", f"CLOSE-{etf}", f"{etf}-VOLUMEN", f"{etf}-HOLDINGS", f"{etf}-SHARES"
-        active_mask = out["date"] >= start
+        nav_col = f"{etf}-NAVSHARE"
+        close_col = f"CLOSE-{etf}"
+        vol_col = f"{etf}-VOLUMEN"
+        hold_col = f"{etf}-HOLDINGS"
+        shr_col = f"{etf}-SHARES"
+        
+        print(f"[PROPAGATE] {etf} ({market} market): Propagating from {etf_start_date}")
+        
+        active_mask = out["date"] >= etf_start_date
         is_trading = out["date"].apply(lambda d: is_trading_day_market(d, market)) & active_mask
+        is_non_trading = (~is_trading) & active_mask
         
         for col in [nav_col, close_col, vol_col, hold_col, shr_col]:
-            if col not in out.columns: continue
-            vals = out[col].where(is_trading).ffill()
-            mask = (~is_trading) & active_mask & out[col].isna() & vals.notna()
-            out.loc[mask, col] = vals[mask]
+            if col not in out.columns:
+                continue
+            trading_values = out[col].where(is_trading)
+            propagated_values = trading_values.ffill()
+            fill_mask = is_non_trading & out[col].isna() & propagated_values.notna()
             
+            if fill_mask.any():
+                out.loc[fill_mask, col] = propagated_values[fill_mask]
+                print(f"  {col}: {fill_mask.sum()} values propagated to non-trading days")
+        
+        print(f"  {etf}: {is_trading.sum()} trading days, {is_non_trading.sum()} non-trading days")
+    
     return out
 
 # ======================== STRUCTURED JSON =======================
 def create_structured_json(df: pd.DataFrame, output_path: str):
-    """Generates a structured and documented JSON file from the processed data."""
+    """Generates a structured JSON file with calculation notes."""
     dff = df.copy()
     dff["date"] = pd.to_datetime(dff["date"], errors="coerce").dt.strftime("%Y-%m-%d")
     meta = {
         "metadata": {
             "total_records": int(len(dff)),
-            "date_range": {"start_date": str(dff["date"].min()), "end_date": str(dff["date"].max())},
+            "date_range": {
+                "start_date": str(dff["date"].min()),
+                "end_date": str(dff["date"].max())
+            },
             "etfs_included": ETF_LIST,
             "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "notes": {
-                "holdings_unit": "BTC", "nav_unit": "USD",
+            "calculation_notes": {
+                "holdings_unit": "BTC",
+                "nav_unit": "USD",
                 "shares_calculation": "SHARES = (Holdings_BTC * BTC_Price_USD) / NAV_USD",
-                "weekend_propagation": "Forward filled from last trading day per market"
+                "initial_holdings_seeds_btc": INITIAL_HOLDINGS_BTC,
+                "weekend_holiday_propagation": "Values propagated from last trading day back to previous trading day per market (US/HK)"
             }
         },
         "daily_data": []
@@ -608,17 +637,26 @@ def create_structured_json(df: pd.DataFrame, output_path: str):
 
     for _, r in dff.sort_values("date", ascending=False).iterrows():
         rec = {
-            "date": r["date"], "time_utc": r.get("Time (UTC)"),
-            "bitcoin_price": float(r["CLOSE-BTC-CB"]) if pd.notna(r.get("CLOSE-BTC-CB")) else None,
-            "total_flows": float(r["Total"]) if pd.notna(r.get("Total")) else None,
+            "date": r["date"],
+            "time_utc": (None if pd.isna(r.get("Time (UTC)")) else r.get("Time (UTC)")),
+            "bitcoin_price": (None if pd.isna(r.get("CLOSE-BTC-CB")) else float(r.get("CLOSE-BTC-CB"))),
+            "total_flows": (None if pd.isna(r.get("Total")) else float(r.get("Total"))),
             "etfs": {}
         }
         for e in ETF_LIST:
-            f, n, c, v, h, s = r.get(e), r.get(f"{e}-NAVSHARE"), r.get(f"CLOSE-{e}"), r.get(f"{e}-VOLUMEN"), r.get(f"{e}-HOLDINGS"), r.get(f"{e}-SHARES")
+            f = r.get(e)
+            n = r.get(f"{e}-NAVSHARE")
+            c = r.get(f"CLOSE-{e}")
+            v = r.get(f"{e}-VOLUMEN")
+            h = r.get(f"{e}-HOLDINGS")
+            s = r.get(f"{e}-SHARES")
             obj = {
-                "flows": float(f) if pd.notna(f) else None, "nav_share": float(n) if pd.notna(n) else None,
-                "close_price": float(c) if pd.notna(c) else None, "volume": float(v) if pd.notna(v) else None,
-                "holdings_btc": float(h) if pd.notna(h) else None, "shares": float(s) if pd.notna(s) else None
+                "flows": float(f) if pd.notna(f) else None,
+                "nav_share": float(n) if pd.notna(n) else None,
+                "close_price": float(c) if pd.notna(c) else None,
+                "volume": float(v) if pd.notna(v) else None,
+                "holdings_btc": float(h) if pd.notna(h) else None,
+                "shares": float(s) if pd.notna(s) else None
             }
             if any(val is not None for val in obj.values()): rec["etfs"][e] = obj
         meta["daily_data"].append(rec)
@@ -639,6 +677,13 @@ def run():
     if new_df.empty: return
 
     print(f"[BUILD] Loaded {len(new_df)} flows from CMC")
+    
+    # Robust date column detection
+    if "date" not in new_df.columns and not new_df.empty:
+        # Fallback to the first column if 'date' is missing (e.g., it might be 'Time')
+        print(f"[BUILD] Warning: 'date' column not found, using first column '{new_df.columns[0]}'")
+        new_df.rename(columns={new_df.columns[0]: "date"}, inplace=True)
+        
     new_df["date"] = pd.to_datetime(new_df["date"], errors="coerce").dt.normalize()
     new_df = new_df.dropna(subset=["date"]).sort_values("date")
 
@@ -667,11 +712,16 @@ def run():
     df = propagate_weekend_holidays_data(df)
 
     # Export
+    print("\n[STEP 9] Exporting final results...")
     df["date"] = df["date"].dt.strftime("%Y-%m-%d")
     df = df.sort_values("date", ascending=False).reset_index(drop=True)
     df.to_csv(COMPLETE_FILE, index=False)
+    print(f"[CSV] Saved: {COMPLETE_FILE} ({len(df)} rows)")
     create_structured_json(df, STRUCT_JSON)
-    print(f"\n[DONE] Pipeline completed successfully. Output files: \n - {COMPLETE_FILE}\n - {STRUCT_JSON}")
+    print(f"\n" + "-"*50)
+    print(f"PIPELINE SUCCESS: Aggregated data ready.")
+    print(f"Files generated:\n - {COMPLETE_FILE}\n - {STRUCT_JSON}")
+    print("-"*50)
 
 if __name__ == "__main__":
     run()
