@@ -9,7 +9,7 @@ from core.utils.helpers import (
     polite_sleep, _session_from_driver, download_url_to_file,
     normalize_date_column, save_dataframe, _safe_remove,
     _find_col, _try_click_any, _yf_close_by_date,
-    setup_driver, OUTPUT_DIR, SAVE_FORMAT, TIMEOUT
+    setup_driver, CSV_DIR, JSON_DIR, SAVE_FORMAT, TIMEOUT
 )
 
 _SS_NS = {'ss': 'urn:schemas-microsoft-com:office:spreadsheet'}
@@ -118,7 +118,7 @@ def process_single_etf_ishares(driver, etf, site_url):
     """Main process to scrape a single iShares ETF."""
     name = etf["name"]
     base = os.path.splitext(etf["output_filename"])[0]
-    temp_xls = os.path.join(OUTPUT_DIR, base + "_tmp.xls")
+    temp_xls = os.path.join(CSV_DIR, base + "_tmp.xls")
     print(f"\n[ETF] Processing {name} (iShares – SpreadsheetML 2003) → output .{SAVE_FORMAT}")
     print("="*50)
 
@@ -141,10 +141,10 @@ def process_single_etf_ishares(driver, etf, site_url):
             except: driver.execute_script("arguments[0].click();", el)
             start = time.time()
             while time.time() - start < TIMEOUT:
-                files = [f for f in os.listdir(OUTPUT_DIR) if not f.endswith(".crdownload")]
+                files = [f for f in os.listdir(CSV_DIR) if not f.endswith(".crdownload")]
                 if files:
-                    newest = max(files, key=lambda f: os.path.getctime(os.path.join(OUTPUT_DIR, f)))
-                    pth = os.path.join(OUTPUT_DIR, newest)
+                    newest = max(files, key=lambda f: os.path.getctime(os.path.join(CSV_DIR, f)))
+                    pth = os.path.join(CSV_DIR, newest)
                     if os.path.getsize(pth) > 0 and pth.lower().endswith(".xls"):
                         if os.path.exists(temp_xls): os.remove(temp_xls)
                         os.rename(pth, temp_xls)

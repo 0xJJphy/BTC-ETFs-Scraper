@@ -7,7 +7,7 @@ import os
 import argparse
 import datetime
 from core.utils.helpers import (
-    setup_driver, polite_sleep, SAVE_FORMAT, OUTPUT_DIR, HEADLESS
+    setup_driver, polite_sleep, SAVE_FORMAT, CSV_DIR, JSON_DIR, HEADLESS
 )
 
 # Import individual scrapers from the new core structure
@@ -155,22 +155,27 @@ def accept_cookies_by_site(driver, name):
     return False
 
 def final_directory_cleanup():
-    """Removes residual files in the output directory that are not part of the current configuration."""
-    print("\n[CLEANUP-FINAL] Checking files in:", os.path.abspath(OUTPUT_DIR))
-    allowed_bases = {site["etfs"][0]["output_filename"].split(".")[0] for site in SITES_CONFIG}
-    # Special case for Grayscale which has two ETFs
-    allowed_bases.add("gbtc_dailynav") 
-    
-    for fname in list(os.listdir(OUTPUT_DIR)):
-        full = os.path.join(OUTPUT_DIR, fname)
-        if not os.path.isfile(full): continue
-        base, ext = os.path.splitext(fname)
-        ext = ext.lstrip(".").lower()
-        if (base in allowed_bases) and (ext == SAVE_FORMAT): continue
-        try:
-            os.remove(full)
-            print(f"[CLEANUP-FINAL] Removed residual: {full}")
-        except: pass
+    """Removes residual files in the output directories that are not part of the current configuration."""
+    for target_dir in [CSV_DIR, JSON_DIR]:
+        if not os.path.exists(target_dir): continue
+        print(f"\n[CLEANUP-FINAL] Checking files in: {os.path.abspath(target_dir)}")
+        allowed_bases = {site["etfs"][0]["output_filename"].split(".")[0] for site in SITES_CONFIG}
+        # Special case for Grayscale which has two ETFs
+        allowed_bases.add("gbtc_dailynav") 
+        
+        for fname in list(os.listdir(target_dir)):
+            full = os.path.join(target_dir, fname)
+            if not os.path.isfile(full): continue
+            base, ext = os.path.splitext(fname)
+            ext = ext.lstrip(".").lower()
+            
+            # Check if it should be kept
+            is_allowed = (base in allowed_bases) and (ext in [SAVE_FORMAT, "json"])
+            if not is_allowed:
+                try:
+                    os.remove(full)
+                    print(f"[CLEANUP-FINAL] Removed residual: {full}")
+                except: pass
 
 def process_site(driver, site):
     """Processes all ETFs for a given provider/site."""
@@ -254,7 +259,8 @@ def main():
         # Actually, it's better to pass it down.
         pass
 
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    os.makedirs(CSV_DIR, exist_ok=True)
+    os.makedirs(JSON_DIR, exist_ok=True)
     driver = setup_driver(args.headless)
     all_results = {}
     try:

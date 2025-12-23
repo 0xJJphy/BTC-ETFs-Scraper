@@ -13,14 +13,14 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"
 try:
     from core.utils.helpers import (
         polite_sleep, save_dataframe, _safe_remove,
-        _try_click_any, setup_driver, OUTPUT_DIR, SAVE_FORMAT
+        _try_click_any, setup_driver, CSV_DIR, SAVE_FORMAT
     )
 except ImportError:
     # Fallback for standalone execution if sys.path trick fails
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../utils")))
     from helpers import (
         polite_sleep, save_dataframe, _safe_remove,
-        _try_click_any, setup_driver, OUTPUT_DIR, SAVE_FORMAT
+        _try_click_any, setup_driver, CSV_DIR, SAVE_FORMAT
     )
 
 def accept_cookies_bosera(driver):
@@ -190,7 +190,7 @@ def process_single_etf_bosera(driver, etf, site_url):
         return False, msg
 
     try:
-        dl = wait_for_download(os.path.abspath(OUTPUT_DIR), timeout=60)
+        dl = wait_for_download(os.path.abspath(CSV_DIR), timeout=60)
         print(f"[BOSERA] SUCCESS Downloaded: {dl}")
         df = parse_bosera_usd_counter(dl)
         save_dataframe(df, base, sheet_name="USD Counter")

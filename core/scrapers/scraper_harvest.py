@@ -9,7 +9,7 @@ from selenium.webdriver.common.action_chains import ActionChains
 from core.utils.helpers import (
     polite_sleep, _session_from_driver, download_url_to_file,
     normalize_date_column, save_dataframe, _safe_remove,
-    _harvest_find_click_any, setup_driver, OUTPUT_DIR, SAVE_FORMAT
+    _harvest_find_click_any, setup_driver, CSV_DIR, JSON_DIR, SAVE_FORMAT
 )
 
 HARVEST_URL = "https://www.harvestglobal.com.hk/hgi/index.php/funds/passive/BTCETF#overview"
@@ -237,7 +237,7 @@ def process_single_etf_harvest(driver, etf, site_url):
     """Main process to scrape a single Harvest Global ETF."""
     name = etf["name"]
     base = os.path.splitext(etf["output_filename"])[0]
-    tmp_xls = os.path.join(OUTPUT_DIR, base + "_tmp.xls")
+    tmp_xls = os.path.join(CSV_DIR, base + "_tmp.xls")
     print(f"\n[ETF] Processing {name} (Harvest – BTCETF USD XLS) → output .{SAVE_FORMAT}")
     print("="*50)
 

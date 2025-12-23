@@ -11,7 +11,7 @@ from core.utils.helpers import (
     normalize_date_column, save_dataframe, _safe_remove,
     _find_col, _try_click_any, _yf_close_by_date,
     browser_fetch_text, setup_driver,
-    OUTPUT_DIR, SAVE_FORMAT, TIMEOUT
+    CSV_DIR, SAVE_FORMAT, TIMEOUT
 )
 
 def accept_cookies_invesco(driver):

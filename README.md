@@ -6,17 +6,9 @@ A robust, modular Python pipeline for scraping, processing, and aggregating Bitc
 
 ```bash
 .
-├── core/
-│   ├── scrapers/          # Individual ETF scraper modules
-│   │   ├── scraper_cmc.py        # CoinMarketCap Flows scraper
-│   │   ├── scraper_grayscale.py  # Grayscale (GBTC/BTC)
-│   │   ├── scraper_ishares.py    # iShares (IBIT)
-│   │   └── ...                    # Other ETF scrapers
-│   ├── utils/
-│   │   └── helpers.py     # Common utilities (Selenium, HTTP, IO)
-│   ├── multi_etf_scraper.py   # Multi-site scraper orchestrator
-│   └── data_builder.py        # Core data processing & aggregation engine
-├── etfs_data/             # Scraped data (Direct NAVs, CMC Flows, Final Aggregates)
+├── etfs_data/
+│   ├── csv/               # CSV & XLSX outputs
+│   └── json/              # JSON outputs
 ├── main.py                # Single entry point for the pipeline
 └── requirements.txt       # Project dependencies
 ```

@@ -27,7 +27,9 @@ import yfinance as yf
 # ======================== BASE CONFIGURATION ========================
 
 # Default output directory for individual ETF CSVs
-OUTPUT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../etfs_data"))
+OUTPUT_BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../etfs_data"))
+CSV_DIR  = os.path.join(OUTPUT_BASE_DIR, "csv")
+JSON_DIR = os.path.join(OUTPUT_BASE_DIR, "json")
 HEADLESS   = False
 TIMEOUT    = 45
 
@@ -104,9 +106,10 @@ def setup_driver(headless=False):
         opts.add_argument("--headless=new")
     opts.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
     
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    os.makedirs(CSV_DIR, exist_ok=True)
+    os.makedirs(JSON_DIR, exist_ok=True)
     prefs = {
-        "download.default_directory": OUTPUT_DIR,
+        "download.default_directory": CSV_DIR,
         "download.prompt_for_download": False,
         "download.directory_upgrade": True,
         "safebrowsing.enabled": True
@@ -246,18 +249,36 @@ def _yf_close_by_date(ticker, start_yyyymmdd, end_yyyymmdd):
         return pd.DataFrame(columns=["date","market price"])
 
 def save_dataframe(df, base_name, sheet_name="Historical"):
-    """Saves a DataFrame to the output directory in either CSV or XLSX format."""
+    """Saves a DataFrame to the output directories in both formatted (CSV/XLSX) and JSON formats."""
+    os.makedirs(CSV_DIR, exist_ok=True)
+    os.makedirs(JSON_DIR, exist_ok=True)
+    
     ext = SAVE_FORMAT
-    out_path = os.path.join(OUTPUT_DIR, f"{base_name}.{ext}")
-    if os.path.exists(out_path):
-        try: os.remove(out_path)
+    csv_path = os.path.join(CSV_DIR, f"{base_name}.{ext}")
+    json_path = os.path.join(JSON_DIR, f"{base_name}.json")
+    
+    # Save formatted file (CSV or XLSX)
+    if os.path.exists(csv_path):
+        try: os.remove(csv_path)
         except: pass
 
     if ext == "xlsx":
-        with pd.ExcelWriter(out_path, engine="openpyxl") as w:
+        with pd.ExcelWriter(csv_path, engine="openpyxl") as w:
             df.to_excel(w, sheet_name=sheet_name, index=False)
-        print(f"[SAVE] SUCCESS XLSX saved: {out_path}")
+        print(f"[SAVE] SUCCESS XLSX saved: {csv_path}")
     else:
-        df.to_csv(out_path, index=False)
-        print(f"[SAVE] SUCCESS CSV saved: {out_path}")
-    return out_path
+        df.to_csv(csv_path, index=False)
+        print(f"[SAVE] SUCCESS CSV saved: {csv_path}")
+        
+    # Save JSON file
+    if os.path.exists(json_path):
+        try: os.remove(json_path)
+        except: pass
+        
+    try:
+        df.to_json(json_path, orient="records", indent=2)
+        print(f"[SAVE] SUCCESS JSON saved: {json_path}")
+    except Exception as e:
+        print(f"[SAVE] ERROR JSON failed: {e}")
+        
+    return csv_path

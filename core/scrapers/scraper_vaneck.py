@@ -9,7 +9,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from core.utils.helpers import (
     polite_sleep, _session_from_driver, download_url_to_file,
     normalize_date_column, save_dataframe, _safe_remove,
-    _try_click_any, setup_driver, OUTPUT_DIR, SAVE_FORMAT, TIMEOUT
+    _try_click_any, setup_driver, CSV_DIR, JSON_DIR, SAVE_FORMAT, TIMEOUT
 )
 
 def accept_cookies_vaneck(driver):
@@ -88,7 +88,7 @@ def process_single_etf_vaneck(driver, etf, site_url):
     """Main process to scrape a single VanEck ETF."""
     name = etf["name"]
     base = os.path.splitext(etf["output_filename"])[0]
-    tmp_xlsx = os.path.join(OUTPUT_DIR, base + "_tmp.xlsx")
+    tmp_xlsx = os.path.join(CSV_DIR, base + "_tmp.xlsx")
     print(f"\n[ETF] Processing {name} (VanEck – HODL XLSX) → output .{SAVE_FORMAT}")
     print("="*50)
 
@@ -117,10 +117,10 @@ def process_single_etf_vaneck(driver, etf, site_url):
             except: driver.execute_script("arguments[0].click();", el)
             start = time.time()
             while time.time() - start < TIMEOUT:
-                files = [f for f in os.listdir(os.path.abspath(OUTPUT_DIR)) if not f.endswith(".crdownload")]
+                files = [f for f in os.listdir(os.path.abspath(CSV_DIR)) if not f.endswith(".crdownload")]
                 if files:
-                    newest = max(files, key=lambda f: os.path.getctime(os.path.join(OUTPUT_DIR, f)))
-                    pth = os.path.join(OUTPUT_DIR, newest)
+                    newest = max(files, key=lambda f: os.path.getctime(os.path.join(CSV_DIR, f)))
+                    pth = os.path.join(CSV_DIR, newest)
                     if os.path.getsize(pth) > 0 and pth.lower().endswith((".xlsx",".xls")):
                         if os.path.exists(tmp_xlsx):
                             try: os.remove(tmp_xlsx)

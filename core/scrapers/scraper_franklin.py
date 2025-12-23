@@ -7,7 +7,7 @@ from selenium.webdriver.support import expected_conditions as EC
 
 from core.utils.helpers import (
     polite_sleep, normalize_date_column, save_dataframe, _safe_remove,
-    _try_click_any, setup_driver, OUTPUT_DIR, SAVE_FORMAT
+    _try_click_any, setup_driver, CSV_DIR, JSON_DIR, SAVE_FORMAT
 )
 
 def accept_cookies_franklin(driver):
@@ -93,7 +93,7 @@ def process_single_etf_franklin(driver, etf, site_url):
     """Main process to scrape a single Franklin Templeton ETF."""
     name = etf["name"]
     base = os.path.splitext(etf["output_filename"])[0]
-    tmp_xlsx = os.path.join(OUTPUT_DIR, base + "_tmp.xlsx")
+    tmp_xlsx = os.path.join(CSV_DIR, base + "_tmp.xlsx")
     print(f"\n[ETF] Processing {name} (Franklin – Pricing XLS) → output .{SAVE_FORMAT}")
     print("="*50)
 
@@ -120,7 +120,7 @@ def process_single_etf_franklin(driver, etf, site_url):
         try: btn.click()
         except: driver.execute_script("arguments[0].click();", btn)
         start = time.time()
-        download_dir = os.path.abspath(OUTPUT_DIR)
+        download_dir = os.path.abspath(CSV_DIR)
         while time.time() - start < 45: # TIMEOUT
             files = [f for f in os.listdir(download_dir) if not f.endswith(".crdownload")]
             if files:

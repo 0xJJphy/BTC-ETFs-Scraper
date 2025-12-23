@@ -11,13 +11,16 @@ import holidays
 
 # ======================== PATHS / FILES =========================
 BASE_DIR        = "./etfs_data"
-# Move CMC files to root of data dir
-OUTPUT_CSV      = os.path.join(BASE_DIR, "cmc_bitcoin_etf_flows_btc.csv")
-OUTPUT_JSON     = os.path.join(BASE_DIR, "cmc_bitcoin_etf_flows_btc.json")
-COMPLETE_FILE   = f"{BASE_DIR}/bitcoin_etf_completo.csv"
-STRUCT_JSON     = f"{BASE_DIR}/bitcoin_etf_completo_estructurado.json"
+CSV_DIR         = os.path.join(BASE_DIR, "csv")
+JSON_DIR        = os.path.join(BASE_DIR, "json")
 
-ETF_DIRECT_DIR  = os.getenv("ETF_DIRECT_DIR", f"{BASE_DIR}/")
+OUTPUT_CSV      = os.path.join(CSV_DIR, "cmc_bitcoin_etf_flows_btc.csv")
+OUTPUT_JSON     = os.path.join(JSON_DIR, "cmc_bitcoin_etf_flows_btc.json")
+
+COMPLETE_FILE   = os.path.join(CSV_DIR, "bitcoin_etf_completo.csv")
+STRUCT_JSON     = os.path.join(JSON_DIR, "bitcoin_etf_completo_estructurado.json")
+
+ETF_DIRECT_DIR  = os.getenv("ETF_DIRECT_DIR", CSV_DIR)
 
 # ======================== UTILITIES ===============================
 TICKER_MAP = {

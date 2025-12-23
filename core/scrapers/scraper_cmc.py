@@ -13,14 +13,14 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"
 try:
     from core.utils.helpers import (
         polite_sleep, setup_driver, save_dataframe, 
-        SAVE_FORMAT
+        SAVE_FORMAT, CSV_DIR, JSON_DIR
     )
 except ImportError:
     # Fallback for standalone execution if sys.path trick fails
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../utils")))
     from helpers import (
         polite_sleep, setup_driver, save_dataframe, 
-        SAVE_FORMAT
+        SAVE_FORMAT, CSV_DIR, JSON_DIR
     )
 
 # CMC Specific Config
@@ -240,8 +240,8 @@ def paginate_and_scrape_all(driver, wait, rows_per_page_hint=100):
 
     return all_rows
 
-def process_cmc_flows(driver, output_filename):
-    """Main function to scrape CoinMarketCap Bitcoin ETF flows and save them to a CSV file."""
+def process_cmc_flows(driver, base_name="cmc_bitcoin_etf_flows_btc"):
+    """Main function to scrape CoinMarketCap Bitcoin ETF flows and save them to CSV and JSON."""
     print(f"\n[CMC] Scraping flows from {CMC_URL}")
     print("="*50)
     try:
@@ -256,10 +256,8 @@ def process_cmc_flows(driver, output_filename):
             return False, "No rows could be scraped from CoinMarketCap."
             
         df = pd.DataFrame(rows)
-        # Ensure the directory exists before saving
-        os.makedirs(os.path.dirname(os.path.abspath(output_filename)), exist_ok=True)
-        df.to_csv(output_filename, index=False)
-        print(f"[SUCCESS] CMC Flows saved to {output_filename}")
+        # Use common save helper for dual output
+        save_dataframe(df, base_name)
         return True, None
     except Exception as e:
         msg = f"CMC error: {e}"
@@ -268,11 +266,9 @@ def process_cmc_flows(driver, output_filename):
 
 def main():
     """Standalone execution entry point."""
-    # Output file relative to the execution context
-    out_file = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../etfs_data/DATA_SCRAPPED/CMC-FLOWS/csv/cmc_bitcoin_etf_flows_btc.csv"))
     driver = setup_driver(headless=False)
     try:
-        ok, err = process_cmc_flows(driver, out_file)
+        ok, err = process_cmc_flows(driver)
         if ok: print("[STANDALONE] CMC processed successfully.")
         else: print(f"[STANDALONE] CMC failed: {err}")
     finally:

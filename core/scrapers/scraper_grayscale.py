@@ -9,7 +9,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from core.utils.helpers import (
     polite_sleep, _session_from_driver, download_url_to_file,
     normalize_date_column, save_dataframe, _safe_remove,
-    _find_col, _try_click_any, setup_driver, OUTPUT_DIR, SAVE_FORMAT, TIMEOUT
+    _find_col, _try_click_any, setup_driver, CSV_DIR, JSON_DIR, SAVE_FORMAT, TIMEOUT
 )
 
 def accept_cookies_grayscale(driver):
@@ -79,7 +79,7 @@ def process_single_etf_grayscale(driver, etf, site_url):
     """Main process to scrape a single Grayscale ETF."""
     name = etf["name"]
     base = os.path.splitext(etf["output_filename"])[0]
-    tmp_source = os.path.join(OUTPUT_DIR, base + "_source.xlsx")
+    tmp_source = os.path.join(CSV_DIR, base + "_source.xlsx")
     print(f"\n[ETF] Processing {name} (Grayscale)  → output .{SAVE_FORMAT}")
     print("="*50)
 
@@ -115,10 +115,10 @@ def process_single_etf_grayscale(driver, etf, site_url):
         start = time.time()
         tmp_source_dl = None
         while time.time() - start < TIMEOUT:
-            files = [f for f in os.listdir(os.path.abspath(OUTPUT_DIR)) if not f.endswith(".crdownload")]
+            files = [f for f in os.listdir(os.path.abspath(CSV_DIR)) if not f.endswith(".crdownload")]
             if files:
-                newest = max(files, key=lambda f: os.path.getctime(os.path.join(os.path.abspath(OUTPUT_DIR), f)))
-                pth = os.path.join(os.path.abspath(OUTPUT_DIR), newest)
+                newest = max(files, key=lambda f: os.path.getctime(os.path.join(os.path.abspath(CSV_DIR), f)))
+                pth = os.path.join(os.path.abspath(CSV_DIR), newest)
                 if os.path.getsize(pth) > 0:
                     tmp_source_dl = pth; break
             time.sleep(1)
