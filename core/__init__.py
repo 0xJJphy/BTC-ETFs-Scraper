@@ -1,1 +1,1 @@
-# Package initialization
+# core package

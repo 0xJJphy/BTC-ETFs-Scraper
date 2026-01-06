@@ -1,0 +1,171 @@
+# ============================================================
+# GitHub Actions - BTC ETF Scraper
+# Ejecuta diariamente con Chrome en modo GUI (Xvfb)
+# ============================================================
+
+name: BTC ETF Scraper
+
+on:
+  # Ejecutar diariamente a las 6:00 UTC (después cierre US, antes apertura HK)
+  schedule:
+    - cron: '0 6 * * *'
+  
+  # Permitir ejecución manual desde GitHub UI
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: 'Fase a ejecutar'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - sites
+          - cmc
+          - build
+      save_files:
+        description: 'Guardar archivos CSV/JSON además de DB'
+        required: false
+        default: true
+        type: boolean
+
+env:
+  DOCKER_IMAGE: btc-etf-scraper
+  ETF_SAVE_FORMAT: csv
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🐳 Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 📦 Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: 🔨 Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          load: true
+          tags: ${{ env.DOCKER_IMAGE }}:latest
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+
+      - name: 🗂️ Prepare output directories
+        run: |
+          mkdir -p ./etfs_data/csv ./etfs_data/json ./etfs_data/etfs_completo
+          chmod -R 777 ./etfs_data
+
+      - name: 🚀 Run scraper
+        id: scraper
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          # Determinar fase a ejecutar
+          PHASE="${{ github.event.inputs.phase || 'all' }}"
+          echo "phase=${PHASE}" >> $GITHUB_OUTPUT
+          
+          # Determinar si guardar archivos (default: true para que los artifacts funcionen)
+          SAVE_FILES="${{ github.event.inputs.save_files }}"
+          if [ "$SAVE_FILES" = "false" ]; then
+            SAVE_FLAG=""
+          else
+            SAVE_FLAG="--save-files"
+          fi
+          
+          # Ejecutar container
+          docker run --rm \
+            --shm-size=2g \
+            -v $(pwd)/etfs_data:/app/etfs_data \
+            -e ETF_SAVE_FORMAT=${{ env.ETF_SAVE_FORMAT }} \
+            -e ETF_DRIVER_MODE=undetected \
+            -e ETF_REQUEST_DELAY=1.5 \
+            -e DATABASE_URL="${DATABASE_URL}" \
+            ${{ env.DOCKER_IMAGE }}:latest \
+            python main.py --${PHASE} ${SAVE_FLAG}
+
+      - name: 📊 Upload data artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: etf-data-${{ github.run_number }}-${{ github.run_attempt }}
+          path: |
+            etfs_data/csv/
+            etfs_data/json/
+            etfs_data/etfs_completo/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: 📝 Generate Summary
+        if: always()
+        run: |
+          echo "## 📊 BTC ETF Scraper Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Run:** #${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Phase:** ${{ steps.scraper.outputs.phase || 'all' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Date:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "### 📁 Files Generated" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # CSV files
+          echo "#### CSV Files:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          if [ -d "./etfs_data/csv" ] && [ "$(ls -A ./etfs_data/csv 2>/dev/null)" ]; then
+            ls -lh ./etfs_data/csv/ 2>/dev/null | tail -20 >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No CSV files found" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Final files
+          echo "#### Aggregated Files:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          if [ -d "./etfs_data/etfs_completo" ] && [ "$(ls -A ./etfs_data/etfs_completo 2>/dev/null)" ]; then
+            ls -lh ./etfs_data/etfs_completo/ 2>/dev/null >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No aggregated files found" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+      # Mover cache
+      - name: 🔄 Move cache
+        if: always()
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache || true
+
+  # ============================================================
+  # Job opcional: Commit de datos al repo (si lo deseas)
+  # ============================================================
+  # commit-data:
+  #   needs: scrape
+  #   runs-on: ubuntu-latest
+  #   if: success() && github.ref == 'refs/heads/main'
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/download-artifact@v4
+  #       with:
+  #         name: etf-data-${{ github.run_number }}-${{ github.run_attempt }}
+  #         path: etfs_data
+  #     - name: Commit and push
+  #       run: |
+  #         git config user.name "GitHub Actions"
+  #         git config user.email "actions@github.com"
+  #         git add etfs_data/
+  #         git diff --staged --quiet || git commit -m "📊 Update ETF data $(date -u '+%Y-%m-%d')"
+  #         git push

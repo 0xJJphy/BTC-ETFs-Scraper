@@ -1,0 +1,62 @@
+# ============================================================
+# Docker Ignore - BTC ETF Scraper
+# ============================================================
+
+# Git
+.git
+.gitignore
+.github
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+.eggs/
+*.egg-info/
+*.egg
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data files (se montan como volumen)
+etfs_data/
+
+# Test files
+test_*.py
+tests/
+
+# Documentation
+*.md
+!README.md
+docs/
+
+# Docker files (no necesarios dentro del container)
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Backups
+*.bak
+*.backup
+*_backup.*

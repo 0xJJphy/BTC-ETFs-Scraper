@@ -1,12 +1,36 @@
-pandas
-numpy
-yfinance
-requests
-selenium
-openpyxl
-holidays
-webdriver-manager
-lxml
-beautifulsoup4
-html5lib
-xlrd
+# ============================================================
+# BTC ETF Scraper - Python Dependencies
+# ============================================================
+
+# Core data processing
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Financial data
+yfinance>=0.2.36
+
+# HTTP requests
+requests>=2.31.0
+
+# Web scraping - Selenium + undetected-chromedriver
+selenium>=4.15.0
+undetected-chromedriver>=3.5.5
+
+# Excel/Spreadsheet handling
+openpyxl>=3.1.0
+xlrd>=2.0.0
+
+# Date/Calendar utilities
+holidays>=0.40
+
+# Parsing utilities
+lxml>=5.0.0
+beautifulsoup4>=4.12.0
+html5lib>=1.1
+
+# Database support (PostgreSQL/Supabase)
+psycopg2-binary>=2.9.9
+
+# Environment variables
+python-dotenv>=1.0.0
+

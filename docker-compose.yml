@@ -1,0 +1,112 @@
+# ============================================================
+# Docker Compose - BTC ETF Scraper
+# ============================================================
+# 
+# USO:
+#   docker-compose build                    # Construir imagen
+#   docker-compose run --rm scraper         # Ejecutar todo (DB only)
+#   docker-compose run --rm scraper python main.py --save-files  # Con CSV/JSON
+#   docker-compose run --rm scraper python main.py --sites  # Solo sitios
+#   docker-compose run --rm scraper python main.py --cmc    # Solo CMC
+#   docker-compose run --rm scraper python main.py --build  # Solo builder
+#   docker-compose run --rm scraper bash    # Shell para debug
+#
+# ============================================================
+
+version: '3.8'
+
+services:
+  scraper:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: btc-etf-scraper:latest
+    container_name: btc-etf-scraper
+    
+    environment:
+      - DISPLAY=:99
+      - ETF_SAVE_FORMAT=${ETF_SAVE_FORMAT:-csv}
+      - ETF_DRIVER_MODE=${ETF_DRIVER_MODE:-undetected}
+      - ETF_REQUEST_DELAY=${ETF_REQUEST_DELAY:-1.5}
+      - ETF_REQUEST_JITTER=${ETF_REQUEST_JITTER:-1.0}
+      - ETF_MAX_RETRIES=${ETF_MAX_RETRIES:-5}
+      # Database (opcional - si no está, guarda solo en CSV/JSON)
+      # DATABASE_URL=${DATABASE_URL:-}
+      # Futuro: conexión a DB
+      - DATABASE_URL=${DATABASE_URL:-}
+    
+    volumes:
+      # Persistir datos entre ejecuciones
+      - ./etfs_data:/app/etfs_data
+    
+    # Compartir memoria para Chrome
+    shm_size: '2gb'
+    
+    # Recursos
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2'
+        reservations:
+          memory: 1G
+    
+    # Reintentar si falla
+    restart: "no"
+    
+    # Comando por defecto
+    command: python main.py --all
+
+  # ============================================================
+  # Servicio para ejecutar solo los scrapers de sitios
+  # ============================================================
+  scraper-sites:
+    extends:
+      service: scraper
+    container_name: btc-etf-scraper-sites
+    command: python main.py --sites
+
+  # ============================================================
+  # Servicio para ejecutar solo CMC
+  # ============================================================
+  scraper-cmc:
+    extends:
+      service: scraper
+    container_name: btc-etf-scraper-cmc
+    command: python main.py --cmc
+
+  # ============================================================
+  # Servicio para ejecutar solo el data builder
+  # ============================================================
+  scraper-build:
+    extends:
+      service: scraper
+    container_name: btc-etf-scraper-build
+    command: python main.py --build
+
+  # ============================================================
+  # FASE FUTURA: Base de datos PostgreSQL
+  # Descomentar cuando estés listo para migrar a DB
+  # ============================================================
+  # db:
+  #   image: postgres:16-alpine
+  #   container_name: btc-etf-db
+  #   environment:
+  #     POSTGRES_USER: ${DB_USER:-etf_user}
+  #     POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+  #     POSTGRES_DB: ${DB_NAME:-etfs}
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #     - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+  #   ports:
+  #     - "5432:5432"
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-etf_user} -d ${DB_NAME:-etfs}"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #   restart: unless-stopped
+
+# volumes:
+#   postgres_data:
+#     driver: local
