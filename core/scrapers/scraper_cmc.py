@@ -136,16 +136,26 @@ def _get_first_date(table):
         return el.text.strip()
     except: return None
 
-def _wait_table_page_loaded(driver, wait, prev_first, timeout=10):
-    """Waits for the table to refresh after navigation by checking if the first date changed."""
+def _wait_table_page_loaded(driver, wait, prev_first, timeout=15):
+    """
+    Waits for the table to refresh after navigation by checking if the first date changed.
+    
+    CMC tables take 1-2 seconds to refresh after clicking Next.
+    We use longer intervals between checks and an initial delay.
+    """
+    # Initial delay to give the page time to start loading new data
+    time.sleep(2.0)
+    
     end = time.time() + timeout
     while time.time() < end:
         try:
             table = _get_table(driver)
             cur = _get_first_date(table)
-            if cur and cur != prev_first: return True
+            if cur and cur != prev_first:
+                print(f"[CMC] Table refreshed: {prev_first} -> {cur}")
+                return True
         except: pass
-        time.sleep(0.15)
+        time.sleep(0.5)  # Longer interval between checks (was 0.15s)
     return False
 
 def _parse_visible_rows(table, headers):
@@ -201,8 +211,9 @@ def paginate_and_scrape_all(driver, wait, rows_per_page_hint=100):
     all_rows = []
     seen_dates = set()
     page = 1
+    max_pages = 50  # Safety limit
 
-    while True:
+    while page <= max_pages:
         table = _get_table(driver)
         headers = _get_headers(table)
         page_rows = _scroll_over_table_and_collect(driver, table, headers, rows_target=9999)
@@ -218,30 +229,112 @@ def paginate_and_scrape_all(driver, wait, rows_per_page_hint=100):
         print(f"[CMC] Page {page}: {len(dedup)} rows collected")
         all_rows.extend(dedup)
 
+        # Scroll to bottom of page to ensure pagination is visible
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        time.sleep(1.0)
+        
+        # Enhanced Next button detection - find the FLOWS table pagination specifically
         next_btn = None
-        for xp in [
-            "//ul[contains(@class,'pagination')]//*[contains(@class,'next') and not(contains(@class,'disabled'))]//*[self::a or self::button]",
-            "//button[@aria-label='Next' and not(@disabled)]",
-            "//a[contains(@class,'next') and not(contains(@class,'disabled'))]"
-        ]:
+        
+        # First try: Find pagination near the flows table (not the top ETF list)
+        next_selectors = [
+            # CMC specific - li.next is the confirmed working selector
+            "//li[contains(@class,'next') and not(contains(@class,'disabled'))]",
+            "//li[contains(@class,'next')]//a[@aria-label='Next page']",
+            "//li[contains(@class,'next')]//a",
+            # Standard pagination controls
+            "//ul[contains(@class,'pagination')]//li[contains(@class,'next') and not(contains(@class,'disabled'))]//a",
+            "//ul[contains(@class,'pagination')]//li[contains(@class,'next')]",
+            # Aria-based
+            "//a[@aria-label='Next page' and not(ancestor::li[contains(@class,'disabled')])]",
+            "//button[@aria-label='Next page']",
+            # Text-based fallback
+            "//a[normalize-space()='Next']",
+            "//button[normalize-space()='Next']",
+        ]
+        
+        for xp in next_selectors:
             els = driver.find_elements(By.XPATH, xp)
-            if els: next_btn = els[0]; break
+            # Filter to elements that are visible and in the lower half of the page (flows table pagination)
+            for el in els:
+                try:
+                    if not el.is_displayed():
+                        continue
+                    rect = driver.execute_script(
+                        "var r = arguments[0].getBoundingClientRect(); return {top: r.top, height: r.height};", el
+                    )
+                    # Only consider elements in the lower portion of the viewport (flows table)
+                    if rect and rect.get("top", 0) > 400:
+                        classes = el.get_attribute("class") or ""
+                        parent_classes = el.find_element(By.XPATH, "..").get_attribute("class") or ""
+                        if "disabled" not in classes.lower() and "disabled" not in parent_classes.lower():
+                            next_btn = el
+                            print(f"[CMC] Found Next button at y={rect.get('top')}")
+                            break
+                except Exception as ex:
+                    continue
+            if next_btn:
+                break
 
         if not next_btn:
-            print("[CMC] No more pages available.")
+            print("[CMC] No more pages available (Next button not found in flows table).")
             break
 
         prev_first = _get_first_date(table)
-        _click_hard(driver, next_btn)
-        if not _wait_table_page_loaded(driver, wait, prev_first, timeout=10):
+        
+        # Scroll the Next button into view and click it
+        try:
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", next_btn)
+            time.sleep(0.5)
+            
+            # Try multiple click methods
+            clicked = False
+            
+            # Method 1: Regular click
+            try:
+                next_btn.click()
+                clicked = True
+                print("[CMC] Clicked Next button (direct click)")
+            except Exception:
+                pass
+            
+            # Method 2: JavaScript click
+            if not clicked:
+                try:
+                    driver.execute_script("arguments[0].click();", next_btn)
+                    clicked = True
+                    print("[CMC] Clicked Next button (JS click)")
+                except Exception:
+                    pass
+            
+            # Method 3: Click the anchor inside if it's an li element
+            if not clicked:
+                try:
+                    anchor = next_btn.find_element(By.TAG_NAME, "a")
+                    anchor.click()
+                    clicked = True
+                    print("[CMC] Clicked Next button (inner anchor)")
+                except Exception:
+                    pass
+            
+            if not clicked:
+                print("[CMC] Could not click Next button with any method")
+                break
+                
+        except Exception as e:
+            print(f"[CMC] Could not click Next button: {e}")
+            break
+            
+        if not _wait_table_page_loaded(driver, wait, prev_first, timeout=15):
             print("[CMC] Table did not refresh after clicking 'Next'. Categorized as end of data.")
             break
         page += 1
 
+    print(f"[CMC] Total rows collected: {len(all_rows)}")
     return all_rows
 
 def process_cmc_flows(driver, base_name="cmc_bitcoin_etf_flows_btc"):
-    """Main function to scrape CoinMarketCap Bitcoin ETF flows and save them to CSV and JSON."""
+    """Main function to scrape CoinMarketCap Bitcoin ETF flows and save them to CSV, JSON and database."""
     print(f"\n[CMC] Scraping flows from {CMC_URL}")
     print("="*50)
     try:
@@ -259,9 +352,38 @@ def process_cmc_flows(driver, base_name="cmc_bitcoin_etf_flows_btc"):
         # Standardize the first column (usually 'Time') to 'date'
         if not df.empty and len(df.columns) > 0:
             df.rename(columns={df.columns[0]: "date"}, inplace=True)
-            
-        # Use common save helper for dual output
-        save_dataframe(df, base_name)
+        
+        # CMC flows MUST ALWAYS be saved to CSV because data_builder.py depends on it
+        # This bypasses the ETF_SAVE_FILES setting intentionally
+        os.makedirs(CSV_DIR, exist_ok=True)
+        os.makedirs(JSON_DIR, exist_ok=True)
+        
+        csv_path = os.path.join(CSV_DIR, f"{base_name}.csv")
+        json_path = os.path.join(JSON_DIR, f"{base_name}.json")
+        
+        # Save CSV (required for data_builder.py)
+        df.to_csv(csv_path, index=False)
+        print(f"[CMC] ✅ CSV saved: {csv_path} ({len(df)} rows)")
+        
+        # Save JSON
+        try:
+            df.to_json(json_path, orient="records", indent=2)
+            print(f"[CMC] ✅ JSON saved: {json_path}")
+        except Exception as e:
+            print(f"[CMC] ⚠️  JSON save failed: {e}")
+        
+        # Save to database using the dedicated flows function
+        try:
+            from core.db_adapter import is_db_enabled, save_cmc_flows
+            if is_db_enabled():
+                count = save_cmc_flows(df)
+                if count > 0:
+                    print(f"[CMC] ✅ Saved {count} flow records to database")
+        except ImportError:
+            pass  # db_adapter not available
+        except Exception as e:
+            print(f"[CMC] ⚠️  Failed to save flows to database: {e}")
+        
         return True, None
     except Exception as e:
         msg = f"CMC error: {e}"

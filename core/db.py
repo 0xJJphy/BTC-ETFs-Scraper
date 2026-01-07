@@ -19,6 +19,7 @@ from typing import Optional, List, Dict, Any
 from contextlib import contextmanager
 
 import pandas as pd
+import numpy as np
 
 # Intentar importar psycopg2 (PostgreSQL driver)
 try:
@@ -121,6 +122,48 @@ def get_connection():
 # Helper Functions
 # ============================================================
 
+# PostgreSQL BIGINT limits
+BIGINT_MIN = -9223372036854775808
+BIGINT_MAX = 9223372036854775807
+
+
+def _safe_bigint(value) -> Optional[int]:
+    """
+    Validate and convert a value to a safe BIGINT range for PostgreSQL.
+    Returns None if value is invalid, NaN, or out of range.
+    
+    PostgreSQL BIGINT range: -9223372036854775808 to 9223372036854775807
+    """
+    if value is None:
+        return None
+    
+    try:
+        # Handle pandas NA/NaN
+        if pd.isna(value):
+            return None
+        
+        # Convert to float first to handle scientific notation
+        float_val = float(value)
+        
+        # Check for infinity or NaN
+        if np.isinf(float_val) or np.isnan(float_val):
+            return None
+        
+        # Convert to int
+        int_val = int(float_val)
+        
+        # Check BIGINT bounds
+        if int_val < BIGINT_MIN or int_val > BIGINT_MAX:
+            logger.warning(f"[DB] Value {int_val} exceeds BIGINT range, setting to None")
+            return None
+        
+        return int_val
+        
+    except (ValueError, TypeError, OverflowError) as e:
+        logger.debug(f"[DB] Could not convert {value} to BIGINT: {e}")
+        return None
+
+
 def execute_query(query: str, params: tuple = None, fetch: bool = False) -> Optional[List[Dict]]:
     """Execute a query and optionally fetch results."""
     with get_connection() as conn:
@@ -212,9 +255,9 @@ def bulk_upsert_daily_data(data: List[Dict]) -> int:
             row.get('date'),
             row.get('nav'),
             row.get('market_price'),
-            row.get('shares_outstanding'),
+            _safe_bigint(row.get('shares_outstanding')),  # Validate BIGINT range
             row.get('holdings_btc'),
-            row.get('volume')
+            _safe_bigint(row.get('volume'))  # Validate BIGINT range
         ))
     
     if not rows:
@@ -473,9 +516,9 @@ def df_to_daily_data(df: pd.DataFrame, ticker: str) -> int:
                 d,
                 row.get('nav'),
                 row.get('market_price'),
-                row.get('shares_outstanding'),
+                _safe_bigint(row.get('shares_outstanding')),  # Validate BIGINT range
                 row.get('holdings_btc'),
-                row.get('volume')
+                _safe_bigint(row.get('volume'))  # Validate BIGINT range
             ))
         except Exception:
             continue
