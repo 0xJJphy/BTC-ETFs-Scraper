@@ -718,6 +718,26 @@ def run():
     df.to_csv(COMPLETE_FILE, index=False)
     print(f"[CSV] Saved: {COMPLETE_FILE} ({len(df)} rows)")
     create_structured_json(df, STRUCT_JSON)
+    
+    # Save enriched data to database
+    print("\n[STEP 10] Saving enriched data to database...")
+    try:
+        from core.db_adapter import is_db_enabled, init_database
+        from core.db import save_completed_etf_data
+        
+        if not is_db_enabled():
+            init_database()
+        
+        if is_db_enabled():
+            count = save_completed_etf_data(df)
+            print(f"[DB] ✅ Saved {count} enriched records to database")
+        else:
+            print("[DB] Database not enabled, skipping DB save")
+    except ImportError as e:
+        print(f"[DB] Database modules not available: {e}")
+    except Exception as e:
+        print(f"[DB] Error saving to database: {e}")
+    
     print(f"\n" + "-"*50)
     print(f"PIPELINE SUCCESS: Aggregated data ready.")
     print(f"Files generated:\n - {COMPLETE_FILE}\n - {STRUCT_JSON}")

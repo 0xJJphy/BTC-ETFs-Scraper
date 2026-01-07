@@ -75,6 +75,19 @@ def is_db_enabled() -> bool:
     return _db_enabled
 
 
+def get_last_cmc_flow_date():
+    """
+    Get the last CMC flow date from DB for incremental fetching.
+    Returns None if DB not enabled or no data exists.
+    """
+    if not _db_enabled:
+        return None
+    try:
+        from core.db import get_last_flow_date
+        return get_last_flow_date()
+    except Exception:
+        return None
+
 def init_database() -> bool:
     """Initialize database connection."""
     global _db_enabled

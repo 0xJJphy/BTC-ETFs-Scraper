@@ -217,10 +217,33 @@ def _scroll_over_table_and_collect(driver, table, headers, rows_target=9999):
     return data
 
 
-def paginate_and_scrape_all(driver, wait, rows_per_page_hint=100):
-    """Orchestrates pagination and data collection across all pages of the flows table."""
+def paginate_and_scrape_all(driver, wait, rows_per_page_hint=100, last_known_date=None):
+    """
+    Orchestrates pagination and data collection across all pages of the flows table.
+    
+    Args:
+        driver: Selenium WebDriver
+        wait: WebDriverWait instance
+        rows_per_page_hint: Number of rows per page (default 100)
+        last_known_date: If provided, stop when this date is found (incremental fetch)
+    """
     try: set_rows_per_page(driver, wait, value=rows_per_page_hint)
     except Exception as e: print(f"[CMC] Rows toggle warning: {e}")
+    
+    # Format last_known_date for comparison
+    last_date_markers = []
+    if last_known_date:
+        from datetime import date as date_type
+        if isinstance(last_known_date, date_type):
+            # Generate multiple formats for the same date
+            last_date_markers = [
+                last_known_date.strftime("%b %d, %Y"),     # "Jan 08, 2025"
+                last_known_date.strftime("%B %d, %Y"),     # "January 08, 2025"
+                last_known_date.strftime("%Y-%m-%d"),      # "2025-01-08"
+                last_known_date.strftime("%d/%m/%Y"),      # "08/01/2025"
+                last_known_date.strftime("%m/%d/%Y"),      # "01/08/2025"
+            ]
+            print(f"[CMC] Incremental mode: will stop at date {last_known_date}")
 
     all_rows = []
     seen_dates = set()
@@ -246,16 +269,29 @@ def paginate_and_scrape_all(driver, wait, rows_per_page_hint=100):
 
         date_key = headers[0] if headers else None
         dedup = []
+        found_last_known = False
+        
         for r in page_rows:
             if not r: continue
             if date_key and r.get(date_key) in seen_dates: continue
             dedup.append(r)
             if date_key: seen_dates.add(r.get(date_key))
+            
+            # Check if this row contains the last known date
+            if date_key and last_date_markers:
+                date_val = str(r.get(date_key, ""))
+                if any(marker in date_val for marker in last_date_markers):
+                    found_last_known = True
 
         print(f"[CMC] Page {page}: {len(dedup)} rows collected")
         all_rows.extend(dedup)
         
-        # Check if we've reached the final date (Jan 11, 2024)
+        # If we found the last known date, save this page and exit
+        if found_last_known:
+            print(f"[CMC] ✅ Reached last known date ({last_known_date}). Incremental fetch complete.")
+            return all_rows
+        
+        # Check if we've reached the final date (Jan 11, 2024) - absolute end
         if date_key:
             for r in dedup:
                 date_val = r.get(date_key, "")
@@ -363,13 +399,29 @@ def process_cmc_flows(driver, base_name="cmc_bitcoin_etf_flows_btc"):
     print(f"\n[CMC] Scraping flows from {CMC_URL}")
     print("="*50)
     try:
+        # Query last known date from database for incremental fetch
+        last_known_date = None
+        try:
+            from core.db_adapter import is_db_enabled, get_last_cmc_flow_date
+            if is_db_enabled():
+                last_known_date = get_last_cmc_flow_date()
+                if last_known_date:
+                    print(f"[CMC] Last date in DB: {last_known_date}")
+                else:
+                    print("[CMC] No existing data in DB, will fetch all historical data")
+        except ImportError:
+            print("[CMC] Database not available, will fetch all historical data")
+        except Exception as e:
+            print(f"[CMC] Could not query last date from DB: {e}")
+        
         driver.get(CMC_URL); polite_sleep()
         accept_cookies_cmc(driver); polite_sleep()
         
         wait = WebDriverWait(driver, 30)
         select_flows_btc(driver, wait)
         
-        rows = paginate_and_scrape_all(driver, wait, ROWS_PER_PAGE_HINT)
+        # Pass last_known_date for incremental fetch
+        rows = paginate_and_scrape_all(driver, wait, ROWS_PER_PAGE_HINT, last_known_date=last_known_date)
         if not rows:
             return False, "No rows could be scraped from CoinMarketCap."
             

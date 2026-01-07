@@ -333,9 +333,103 @@ def get_latest_data() -> pd.DataFrame:
     return pd.DataFrame(result) if result else pd.DataFrame()
 
 
+
+# ============================================================
+# Completed Data Operations (from data_builder.py)
+# ============================================================
+
+def save_completed_etf_data(df: pd.DataFrame) -> int:
+    """
+    Save the enriched/completed ETF data from data_builder to the database.
+    
+    This function takes the output from data_builder.py which contains:
+    - Calculated holdings (cumsum of flows)
+    - Estimated NAV/shares for missing trading days
+    - Propagated data for weekends/holidays
+    - Close prices and volumes from Yahoo Finance
+    
+    Returns:
+        Number of records upserted
+    """
+    if df.empty:
+        return 0
+    
+    # ETF ticker mapping (column prefix -> DB ticker)
+    etf_mapping = {
+        'GBTC': 'GBTC', 'BTC': 'BTC', 'IBIT': 'IBIT', 'BTCO': 'BTCO',
+        'EZBC': 'EZBC', 'FBTC': 'FBTC', 'HODL': 'HODL', 'ARKB': 'ARKB',
+        'BRRR': 'BRRR', 'BITB': 'BITB', 'BTCW': 'BTCW',
+        'CHINAAMC': '9042', 'BOSERA&HASHKEY': 'BTCL', 'HARVEST': 'BTCETF',
+    }
+    
+    etfs = get_all_etfs()
+    ticker_to_id = {e['ticker']: e['id'] for e in etfs}
+    
+    records = []
+    for _, row in df.iterrows():
+        try:
+            date_val = pd.to_datetime(row.get('date')).date()
+        except Exception:
+            continue
+        
+        for etf_col, ticker in etf_mapping.items():
+            etf_id = ticker_to_id.get(ticker)
+            if not etf_id:
+                continue
+            
+            nav = row.get(f'{etf_col}-NAVSHARE')
+            market_price = row.get(f'CLOSE-{etf_col}')
+            shares = row.get(f'{etf_col}-SHARES')
+            holdings = row.get(f'{etf_col}-HOLDINGS')
+            volume = row.get(f'{etf_col}-VOLUMEN')
+            
+            if pd.notna(nav) or pd.notna(holdings) or pd.notna(shares) or pd.notna(market_price):
+                records.append((
+                    etf_id, date_val,
+                    float(nav) if pd.notna(nav) else None,
+                    float(market_price) if pd.notna(market_price) else None,
+                    _safe_bigint(shares) if pd.notna(shares) else None,
+                    float(holdings) if pd.notna(holdings) else None,
+                    _safe_bigint(volume) if pd.notna(volume) else None
+                ))
+    
+    if not records:
+        return 0
+    
+    query = """
+        INSERT INTO etf_daily_data (etf_id, date, nav, market_price, shares_outstanding, holdings_btc, volume)
+        VALUES %s
+        ON CONFLICT (etf_id, date) DO UPDATE SET
+            nav = COALESCE(EXCLUDED.nav, etf_daily_data.nav),
+            market_price = COALESCE(EXCLUDED.market_price, etf_daily_data.market_price),
+            shares_outstanding = COALESCE(EXCLUDED.shares_outstanding, etf_daily_data.shares_outstanding),
+            holdings_btc = COALESCE(EXCLUDED.holdings_btc, etf_daily_data.holdings_btc),
+            volume = COALESCE(EXCLUDED.volume, etf_daily_data.volume),
+            updated_at = NOW()
+    """
+    
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            execute_values(cur, query, records)
+            return cur.rowcount
+
+
 # ============================================================
 # Flow Operations
 # ============================================================
+
+def get_last_flow_date() -> Optional[date]:
+    """
+    Get the most recent flow date in the database.
+    Used for incremental fetching in CMC scraper.
+    """
+    result = execute_query(
+        "SELECT MAX(date) as last_date FROM etf_flows",
+        fetch=True
+    )
+    if result and result[0] and result[0].get('last_date'):
+        return result[0]['last_date']
+    return None
 
 def upsert_flow(
     ticker: str,
