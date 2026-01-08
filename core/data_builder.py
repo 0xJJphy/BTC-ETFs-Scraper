@@ -723,7 +723,7 @@ def run():
     print("\n[STEP 10] Saving enriched data to database...")
     try:
         from core.db_adapter import is_db_enabled, init_database
-        from core.db import save_completed_etf_data
+        from core.db import save_completed_etf_data, bulk_upsert_btc_prices
         
         if not is_db_enabled():
             init_database()
@@ -731,6 +731,24 @@ def run():
         if is_db_enabled():
             count = save_completed_etf_data(df)
             print(f"[DB] ✅ Saved {count} enriched records to database")
+            
+            # Save BTC prices to btc_prices table for AUM calculation
+            print("\n[STEP 11] Saving BTC prices to database...")
+            btc_prices = []
+            for _, row in df.iterrows():
+                try:
+                    date_val = pd.to_datetime(row.get('date')).date()
+                    btc_price = row.get('CLOSE-BTC-CB')
+                    if pd.notna(btc_price) and float(btc_price) > 0:
+                        btc_prices.append((date_val, float(btc_price)))
+                except Exception:
+                    continue
+            
+            if btc_prices:
+                btc_count = bulk_upsert_btc_prices(btc_prices)
+                print(f"[DB] ✅ Saved {btc_count} BTC prices to database")
+            else:
+                print("[DB] No BTC prices to save")
         else:
             print("[DB] Database not enabled, skipping DB save")
     except ImportError as e:

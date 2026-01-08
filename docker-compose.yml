@@ -1,7 +1,7 @@
 # ============================================================
 # Docker Compose - BTC ETF Scraper
 # ============================================================
-# 
+#
 # USO:
 #   docker-compose build                    # Construir imagen
 #   docker-compose run --rm scraper         # Ejecutar todo (DB only)
@@ -22,7 +22,7 @@ services:
       dockerfile: Dockerfile
     image: btc-etf-scraper:latest
     container_name: btc-etf-scraper
-    
+
     environment:
       - DISPLAY=:99
       - ETF_SAVE_FORMAT=${ETF_SAVE_FORMAT:-csv}
@@ -34,14 +34,14 @@ services:
       # DATABASE_URL=${DATABASE_URL:-}
       # Futuro: conexión a DB
       - DATABASE_URL=${DATABASE_URL:-}
-    
+
     volumes:
       # Persistir datos entre ejecuciones
       - ./etfs_data:/app/etfs_data
-    
+
     # Compartir memoria para Chrome
     shm_size: '2gb'
-    
+
     # Recursos
     deploy:
       resources:
@@ -50,10 +50,10 @@ services:
           cpus: '2'
         reservations:
           memory: 1G
-    
+
     # Reintentar si falla
     restart: "no"
-    
+
     # Comando por defecto
     command: python main.py --all
 
@@ -83,7 +83,6 @@ services:
       service: scraper
     container_name: btc-etf-scraper-build
     command: python main.py --build
-
   # ============================================================
   # FASE FUTURA: Base de datos PostgreSQL
   # Descomentar cuando estés listo para migrar a DB
@@ -107,6 +106,6 @@ services:
   #     retries: 5
   #   restart: unless-stopped
 
-# volumes:
-#   postgres_data:
-#     driver: local
+  # volumes:
+  #   postgres_data:
+  #     driver: local
