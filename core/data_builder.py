@@ -808,6 +808,15 @@ def run():
                 print(f"[DB] ✅ Saved {btc_count} BTC prices to database")
             else:
                 print("[DB] No BTC prices to save")
+
+            # Calculate flow_usd using BTC prices
+            print("\n[STEP 12] Calculating flow_usd from BTC prices...")
+            from core.db import calculate_flow_usd_from_btc_prices
+            usd_count = calculate_flow_usd_from_btc_prices()
+            if usd_count > 0:
+                print(f"[DB] ✅ Calculated flow_usd for {usd_count} records")
+            else:
+                print("[DB] All flow_usd values already calculated")
         else:
             print("[DB] Database not enabled, skipping DB save")
     except ImportError as e:
