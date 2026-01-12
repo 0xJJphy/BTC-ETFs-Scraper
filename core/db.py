@@ -431,6 +431,64 @@ def get_last_flow_date() -> Optional[date]:
         return result[0]['last_date']
     return None
 
+
+def get_all_flows_wide_format() -> pd.DataFrame:
+    """
+    Get all flows from the database in wide format (like the CMC CSV).
+
+    Returns a DataFrame with columns: date, GBTC, IBIT, BITB, etc.
+    This is used by data_builder.py to calculate holdings correctly
+    even when running in incremental mode.
+    """
+    # DB ticker -> CMC column name mapping (reverse of CMC_COLUMN_TO_TICKER)
+    ticker_to_column = {
+        'GBTC': 'GBTC', 'BTC': 'BTC', 'IBIT': 'IBIT', 'BTCO': 'BTCO',
+        'EZBC': 'EZBC', 'FBTC': 'FBTC', 'HODL': 'HODL', 'ARKB': 'ARKB',
+        'BRRR': 'BRRR', 'BITB': 'BITB', 'BTCW': 'BTCW',
+        '9042': 'CHINAAMC', 'BTCL': 'BOSERA&HASHKEY', 'BTCETF': 'HARVEST',
+    }
+
+    try:
+        # Get all flows with ticker names
+        result = execute_query(
+            """
+            SELECT f.date, e.ticker, f.flow_btc
+            FROM etf_flows f
+            JOIN etfs e ON f.etf_id = e.id
+            WHERE f.flow_btc IS NOT NULL
+            ORDER BY f.date
+            """,
+            fetch=True
+        )
+
+        if not result:
+            return pd.DataFrame()
+
+        # Convert to DataFrame
+        df_long = pd.DataFrame(result)
+
+        # Map DB tickers to CMC column names
+        df_long['column_name'] = df_long['ticker'].map(ticker_to_column)
+        df_long = df_long.dropna(subset=['column_name'])
+
+        # Pivot to wide format
+        df_wide = df_long.pivot_table(
+            index='date',
+            columns='column_name',
+            values='flow_btc',
+            aggfunc='first'  # In case of duplicates, take first
+        ).reset_index()
+
+        # Ensure date column is properly named
+        df_wide.columns.name = None
+
+        logger.info(f"[DB] Loaded {len(df_wide)} days of flows from database")
+        return df_wide
+
+    except Exception as e:
+        logger.error(f"[DB] Error loading flows: {e}")
+        return pd.DataFrame()
+
 def upsert_flow(
     ticker: str,
     date: date,
