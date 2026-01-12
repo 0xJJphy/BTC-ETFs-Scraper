@@ -555,6 +555,39 @@ def bulk_upsert_flows(data: List[Dict]) -> int:
             return cur.rowcount
 
 
+def calculate_flow_usd_from_btc_prices() -> int:
+    """
+    Calculate and update flow_usd for all flows using BTC prices.
+
+    This updates all etf_flows records where flow_btc exists but flow_usd is NULL,
+    using the formula: flow_usd = flow_btc * btc_price
+
+    Returns:
+        Number of records updated
+    """
+    update_query = """
+        UPDATE etf_flows f
+        SET flow_usd = f.flow_btc * bp.price_usd,
+            updated_at = NOW()
+        FROM btc_prices bp
+        WHERE f.date = bp.date
+          AND f.flow_btc IS NOT NULL
+          AND f.flow_usd IS NULL
+    """
+
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(update_query)
+                count = cur.rowcount
+                if count > 0:
+                    logger.info(f"[DB] Calculated flow_usd for {count} records")
+                return count
+    except Exception as e:
+        logger.error(f"[DB] Error calculating flow_usd: {e}")
+        return 0
+
+
 # ============================================================
 # BTC Price Operations
 # ============================================================
