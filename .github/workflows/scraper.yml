@@ -28,6 +28,11 @@ on:
         required: false
         default: true
         type: boolean
+      upload_artifacts:
+        description: 'Subir CSV/JSON como artifacts a GitHub'
+        required: false
+        default: false
+        type: boolean
 
 env:
   DOCKER_IMAGE: btc-etf-scraper
@@ -98,7 +103,7 @@ jobs:
 
       - name: 📊 Upload data artifacts
         uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && (github.event.inputs.upload_artifacts == 'true')
         with:
           name: etf-data-${{ github.run_number }}-${{ github.run_attempt }}
           path: |
