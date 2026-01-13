@@ -22,6 +22,16 @@ def accept_cookies_grayscale(driver):
 
 def find_etf_row_grayscale(driver, etf):
     """Find the specific ETF row in the Grayscale resources table."""
+    # Wait for table to load (Material-UI renders dynamically)
+    try:
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        WebDriverWait(driver, 15).until(
+            EC.presence_of_element_located((By.XPATH, "//tr[contains(.,'Bitcoin')]"))
+        )
+    except:
+        pass
+
     terms = etf["search_terms"]
     xps = []
     for t in terms:
