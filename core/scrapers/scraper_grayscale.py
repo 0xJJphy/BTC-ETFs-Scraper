@@ -32,6 +32,15 @@ def find_etf_row_grayscale(driver, etf):
     except:
         pass
 
+    # Scroll down to load lazy-loaded content
+    try:
+        driver.execute_script("window.scrollTo(0, 500);")
+        time.sleep(1)
+        driver.execute_script("window.scrollTo(0, 0);")
+        time.sleep(0.5)
+    except:
+        pass
+
     terms = etf["search_terms"]
     xps = []
     for t in terms:
