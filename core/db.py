@@ -489,6 +489,90 @@ def get_all_flows_wide_format() -> pd.DataFrame:
         logger.error(f"[DB] Error loading flows: {e}")
         return pd.DataFrame()
 
+
+def get_all_etf_data_wide_format() -> pd.DataFrame:
+    """
+    Get all ETF data from database in wide format (like the final CSV).
+
+    Returns a DataFrame with columns: date, GBTC-NAVSHARE, GBTC-HOLDINGS, etc.
+    This preserves existing calculated data (NAV, shares, holdings).
+    """
+    # DB ticker -> CMC column name mapping
+    ticker_to_column = {
+        'GBTC': 'GBTC', 'BTC': 'BTC', 'IBIT': 'IBIT', 'BTCO': 'BTCO',
+        'EZBC': 'EZBC', 'FBTC': 'FBTC', 'HODL': 'HODL', 'ARKB': 'ARKB',
+        'BRRR': 'BRRR', 'BITB': 'BITB', 'BTCW': 'BTCW',
+        '9042': 'CHINAAMC', 'BTCL': 'BOSERA&HASHKEY', 'BTCETF': 'HARVEST',
+    }
+
+    try:
+        # Get all daily data
+        result = execute_query(
+            """
+            SELECT
+                d.date,
+                e.ticker,
+                d.nav,
+                d.market_price,
+                d.shares_outstanding,
+                d.holdings_btc,
+                d.volume
+            FROM etf_daily_data d
+            JOIN etfs e ON d.etf_id = e.id
+            ORDER BY d.date
+            """,
+            fetch=True
+        )
+
+        if not result:
+            return pd.DataFrame()
+
+        df = pd.DataFrame(result)
+
+        # Map tickers to column names
+        df['etf_name'] = df['ticker'].map(ticker_to_column)
+        df = df.dropna(subset=['etf_name'])
+
+        # Create wide format DataFrame
+        dates = df['date'].unique()
+        wide_data = {'date': sorted(dates)}
+
+        for etf_name in df['etf_name'].unique():
+            etf_data = df[df['etf_name'] == etf_name].set_index('date')
+            wide_data[f'{etf_name}-NAVSHARE'] = [etf_data.loc[d, 'nav'] if d in etf_data.index else None for d in wide_data['date']]
+            wide_data[f'{etf_name}-HOLDINGS'] = [etf_data.loc[d, 'holdings_btc'] if d in etf_data.index else None for d in wide_data['date']]
+            wide_data[f'{etf_name}-SHARES'] = [etf_data.loc[d, 'shares_outstanding'] if d in etf_data.index else None for d in wide_data['date']]
+            wide_data[f'CLOSE-{etf_name}'] = [etf_data.loc[d, 'market_price'] if d in etf_data.index else None for d in wide_data['date']]
+            wide_data[f'{etf_name}-VOLUMEN'] = [etf_data.loc[d, 'volume'] if d in etf_data.index else None for d in wide_data['date']]
+
+        df_wide = pd.DataFrame(wide_data)
+        logger.info(f"[DB] Loaded {len(df_wide)} days of ETF data from database")
+        return df_wide
+
+    except Exception as e:
+        logger.error(f"[DB] Error loading ETF data: {e}")
+        import traceback
+        traceback.print_exc()
+        return pd.DataFrame()
+
+
+def get_btc_prices_as_series() -> pd.Series:
+    """Get all BTC prices as a pandas Series indexed by date."""
+    try:
+        result = execute_query(
+            "SELECT date, price_usd FROM btc_prices ORDER BY date",
+            fetch=True
+        )
+        if not result:
+            return pd.Series(dtype=float)
+
+        df = pd.DataFrame(result)
+        return df.set_index('date')['price_usd']
+    except Exception as e:
+        logger.error(f"[DB] Error loading BTC prices: {e}")
+        return pd.Series(dtype=float)
+
+
 def upsert_flow(
     ticker: str,
     date: date,
