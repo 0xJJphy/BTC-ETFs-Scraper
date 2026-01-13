@@ -84,10 +84,10 @@ jobs:
           
           # Determinar si guardar archivos (default: true para que los artifacts funcionen)
           SAVE_FILES="${{ github.event.inputs.save_files }}"
-          if [ "$SAVE_FILES" = "false" ]; then
-            SAVE_FLAG=""
-          else
+          if [ "$SAVE_FILES" = "true" ]; then
             SAVE_FLAG="--save-files"
+          else
+            SAVE_FLAG=""
           fi
           
           # Ejecutar container
