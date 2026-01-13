@@ -565,26 +565,61 @@ def calculate_flow_usd_from_btc_prices() -> int:
     Returns:
         Number of records updated
     """
-    update_query = """
-        UPDATE etf_flows f
-        SET flow_usd = f.flow_btc * bp.price_usd,
-            updated_at = NOW()
-        FROM btc_prices bp
-        WHERE f.date = bp.date
-          AND f.flow_btc IS NOT NULL
-          AND f.flow_usd IS NULL
-    """
-
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(update_query)
+                # First check how many records need updating and have matching prices
+                cur.execute("""
+                    SELECT COUNT(*) as pending
+                    FROM etf_flows f
+                    WHERE f.flow_btc IS NOT NULL AND f.flow_usd IS NULL
+                """)
+                pending = cur.fetchone()[0]
+                logger.info(f"[DB] Flows pending flow_usd calculation: {pending}")
+
+                if pending == 0:
+                    return 0
+
+                cur.execute("SELECT COUNT(*) FROM btc_prices")
+                btc_count = cur.fetchone()[0]
+                logger.info(f"[DB] BTC prices available: {btc_count}")
+
+                if btc_count == 0:
+                    logger.warning("[DB] No BTC prices available, cannot calculate flow_usd")
+                    return 0
+
+                # Check matching dates
+                cur.execute("""
+                    SELECT COUNT(*) as matching
+                    FROM etf_flows f
+                    JOIN btc_prices bp ON f.date = bp.date
+                    WHERE f.flow_btc IS NOT NULL AND f.flow_usd IS NULL
+                """)
+                matching = cur.fetchone()[0]
+                logger.info(f"[DB] Flows with matching BTC price: {matching}")
+
+                if matching == 0:
+                    logger.warning("[DB] No matching dates between flows and BTC prices")
+                    return 0
+
+                # Now do the update
+                cur.execute("""
+                    UPDATE etf_flows f
+                    SET flow_usd = f.flow_btc * bp.price_usd,
+                        updated_at = NOW()
+                    FROM btc_prices bp
+                    WHERE f.date = bp.date
+                      AND f.flow_btc IS NOT NULL
+                      AND f.flow_usd IS NULL
+                """)
                 count = cur.rowcount
-                if count > 0:
-                    logger.info(f"[DB] Calculated flow_usd for {count} records")
+                logger.info(f"[DB] Updated flow_usd for {count} records")
                 return count
+
     except Exception as e:
         logger.error(f"[DB] Error calculating flow_usd: {e}")
+        import traceback
+        traceback.print_exc()
         return 0
 
 
