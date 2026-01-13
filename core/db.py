@@ -605,8 +605,7 @@ def calculate_flow_usd_from_btc_prices() -> int:
                 # Now do the update
                 cur.execute("""
                     UPDATE etf_flows f
-                    SET flow_usd = f.flow_btc * bp.price_usd,
-                        updated_at = NOW()
+                    SET flow_usd = f.flow_btc * bp.price_usd
                     FROM btc_prices bp
                     WHERE f.date = bp.date
                       AND f.flow_btc IS NOT NULL

@@ -665,77 +665,18 @@ def create_structured_json(df: pd.DataFrame, output_path: str):
         json.dump(meta, f, indent=2)
     print(f"[JSON] Saved: {output_path}")
 
-# ======================== FLOW DATA LOADING =================
-def load_flows_from_db() -> pd.DataFrame:
-    """
-    Load all flows from the database in wide format.
-
-    This ensures correct holdings calculation even when CMC scraper
-    runs in incremental mode (which only saves new days to CSV).
-
-    Returns:
-        DataFrame with flows or empty DataFrame if DB unavailable
-    """
-    try:
-        from core.db_adapter import is_db_enabled, init_database
-        from core.db import get_all_flows_wide_format
-
-        if not is_db_enabled():
-            init_database()
-
-        if is_db_enabled():
-            df = get_all_flows_wide_format()
-            if not df.empty:
-                print(f"[BUILD] ✅ Loaded {len(df)} days of flows from DATABASE")
-                return df
-            else:
-                print("[BUILD] Database enabled but no flows found")
-        else:
-            print("[BUILD] Database not available")
-    except ImportError as e:
-        print(f"[BUILD] Database modules not available: {e}")
-    except Exception as e:
-        print(f"[BUILD] Error loading from database: {e}")
-
-    return pd.DataFrame()
-
-
-def load_flows_from_csv() -> pd.DataFrame:
-    """
-    Load flows from CSV file (fallback when DB not available).
-
-    Returns:
-        DataFrame with flows or empty DataFrame if file not found
-    """
-    if not os.path.exists(OUTPUT_CSV):
-        print(f"[BUILD] CSV file not found: {OUTPUT_CSV}")
-        return pd.DataFrame()
-
-    df = pd.read_csv(OUTPUT_CSV)
-    if not df.empty:
-        print(f"[BUILD] Loaded {len(df)} days of flows from CSV")
-    return df
-
-
 # ======================== MAIN RUNNER =======================
 def run():
     """Main pipeline execution for data building and aggregation."""
     os.makedirs(os.path.dirname(COMPLETE_FILE), exist_ok=True)
-
-    # CRITICAL: Load flows from DB first (has complete historical data)
-    # The CSV may only contain recent days when CMC scraper runs in incremental mode
-    new_df = load_flows_from_db()
-
-    # Fallback to CSV if DB not available or empty
-    if new_df.empty:
-        print("[BUILD] Falling back to CSV...")
-        new_df = load_flows_from_csv()
-
-    if new_df.empty:
-        print(f"[ERROR] No flow data available from DB or CSV")
+    if not os.path.exists(OUTPUT_CSV):
+        print(f"[ERROR] Flow file not found: {OUTPUT_CSV}")
         return
 
-    print(f"[BUILD] Processing {len(new_df)} days of flow data")
+    new_df = pd.read_csv(OUTPUT_CSV)
+    if new_df.empty: return
+
+    print(f"[BUILD] Loaded {len(new_df)} flows from CMC")
     
     # Robust date column detection
     if "date" not in new_df.columns and not new_df.empty:
@@ -777,53 +718,6 @@ def run():
     df.to_csv(COMPLETE_FILE, index=False)
     print(f"[CSV] Saved: {COMPLETE_FILE} ({len(df)} rows)")
     create_structured_json(df, STRUCT_JSON)
-    
-    # Save enriched data to database
-    print("\n[STEP 10] Saving enriched data to database...")
-    try:
-        from core.db_adapter import is_db_enabled, init_database
-        from core.db import save_completed_etf_data, bulk_upsert_btc_prices
-        
-        if not is_db_enabled():
-            init_database()
-        
-        if is_db_enabled():
-            count = save_completed_etf_data(df)
-            print(f"[DB] ✅ Saved {count} enriched records to database")
-            
-            # Save BTC prices to btc_prices table for AUM calculation
-            print("\n[STEP 11] Saving BTC prices to database...")
-            btc_prices = []
-            for _, row in df.iterrows():
-                try:
-                    date_val = pd.to_datetime(row.get('date')).date()
-                    btc_price = row.get('CLOSE-BTC-CB')
-                    if pd.notna(btc_price) and float(btc_price) > 0:
-                        btc_prices.append((date_val, float(btc_price)))
-                except Exception:
-                    continue
-            
-            if btc_prices:
-                btc_count = bulk_upsert_btc_prices(btc_prices)
-                print(f"[DB] ✅ Saved {btc_count} BTC prices to database")
-            else:
-                print("[DB] No BTC prices to save")
-
-            # Calculate flow_usd using BTC prices
-            print("\n[STEP 12] Calculating flow_usd from BTC prices...")
-            from core.db import calculate_flow_usd_from_btc_prices
-            usd_count = calculate_flow_usd_from_btc_prices()
-            if usd_count > 0:
-                print(f"[DB] ✅ Calculated flow_usd for {usd_count} records")
-            else:
-                print("[DB] All flow_usd values already calculated")
-        else:
-            print("[DB] Database not enabled, skipping DB save")
-    except ImportError as e:
-        print(f"[DB] Database modules not available: {e}")
-    except Exception as e:
-        print(f"[DB] Error saving to database: {e}")
-    
     print(f"\n" + "-"*50)
     print(f"PIPELINE SUCCESS: Aggregated data ready.")
     print(f"Files generated:\n - {COMPLETE_FILE}\n - {STRUCT_JSON}")
