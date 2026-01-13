@@ -665,17 +665,11 @@ def create_structured_json(df: pd.DataFrame, output_path: str):
         json.dump(meta, f, indent=2)
     print(f"[JSON] Saved: {output_path}")
 
-# ======================== FLOW DATA LOADING =================
+# ======================== DATA LOADING FROM DB =======================
+RECALC_DAYS = 7  # Always recalculate last N days
+
 def load_flows_from_db() -> pd.DataFrame:
-    """
-    Load all flows from the database in wide format.
-
-    This ensures correct holdings calculation even when CMC scraper
-    runs in incremental mode (which only saves new days to CSV).
-
-    Returns:
-        DataFrame with flows or empty DataFrame if DB unavailable
-    """
+    """Load all flows from database in wide format."""
     try:
         from core.db_adapter import is_db_enabled, init_database
         from core.db import get_all_flows_wide_format
@@ -688,33 +682,89 @@ def load_flows_from_db() -> pd.DataFrame:
             if not df.empty:
                 print(f"[BUILD] ✅ Loaded {len(df)} days of flows from DATABASE")
                 return df
-            else:
-                print("[BUILD] Database enabled but no flows found")
-        else:
-            print("[BUILD] Database not available")
-    except ImportError as e:
-        print(f"[BUILD] Database modules not available: {e}")
+    except ImportError:
+        pass
     except Exception as e:
-        print(f"[BUILD] Error loading from database: {e}")
-
+        print(f"[BUILD] Error loading flows from DB: {e}")
     return pd.DataFrame()
 
 
-def load_flows_from_csv() -> pd.DataFrame:
-    """
-    Load flows from CSV file (fallback when DB not available).
+def load_existing_data_from_db() -> pd.DataFrame:
+    """Load existing ETF data (NAV, holdings, shares) from database."""
+    try:
+        from core.db_adapter import is_db_enabled
+        from core.db import get_all_etf_data_wide_format
 
-    Returns:
-        DataFrame with flows or empty DataFrame if file not found
-    """
-    if not os.path.exists(OUTPUT_CSV):
-        print(f"[BUILD] CSV file not found: {OUTPUT_CSV}")
-        return pd.DataFrame()
+        if is_db_enabled():
+            df = get_all_etf_data_wide_format()
+            if not df.empty:
+                print(f"[BUILD] ✅ Loaded {len(df)} days of existing data from DATABASE")
+                return df
+    except ImportError:
+        pass
+    except Exception as e:
+        print(f"[BUILD] Error loading existing data from DB: {e}")
+    return pd.DataFrame()
 
-    df = pd.read_csv(OUTPUT_CSV)
-    if not df.empty:
-        print(f"[BUILD] Loaded {len(df)} days of flows from CSV")
-    return df
+
+def load_btc_prices_from_db() -> pd.Series:
+    """Load BTC prices from database."""
+    try:
+        from core.db_adapter import is_db_enabled
+        from core.db import get_btc_prices_as_series
+
+        if is_db_enabled():
+            prices = get_btc_prices_as_series()
+            if not prices.empty:
+                print(f"[BUILD] ✅ Loaded {len(prices)} BTC prices from DATABASE")
+                return prices
+    except ImportError:
+        pass
+    except Exception as e:
+        print(f"[BUILD] Error loading BTC prices from DB: {e}")
+    return pd.Series(dtype=float)
+
+
+def merge_existing_with_new(existing_df: pd.DataFrame, new_df: pd.DataFrame, recalc_from: date) -> pd.DataFrame:
+    """
+    Merge existing data with new calculations.
+    Keep existing data for dates before recalc_from, use new data for dates >= recalc_from.
+    """
+    if existing_df.empty:
+        return new_df
+    if new_df.empty:
+        return existing_df
+
+    existing_df = existing_df.copy()
+    new_df = new_df.copy()
+
+    existing_df["date"] = pd.to_datetime(existing_df["date"], errors="coerce").dt.normalize()
+    new_df["date"] = pd.to_datetime(new_df["date"], errors="coerce").dt.normalize()
+    recalc_ts = pd.Timestamp(recalc_from)
+
+    # For dates before recalc_from: prefer existing data (preserve NAV, shares)
+    # For dates >= recalc_from: use new calculations
+    old_data = existing_df[existing_df["date"] < recalc_ts].copy()
+    new_data = new_df[new_df["date"] >= recalc_ts].copy()
+
+    # For old data, fill in flow columns from new_df if they exist
+    if not old_data.empty and not new_df.empty:
+        for col in ETF_LIST + ["Total"]:
+            if col in new_df.columns and col in old_data.columns:
+                old_dates = old_data["date"]
+                new_subset = new_df[new_df["date"].isin(old_dates)].set_index("date")
+                for idx, row in old_data.iterrows():
+                    d = row["date"]
+                    if d in new_subset.index and pd.isna(old_data.at[idx, col]):
+                        old_data.at[idx, col] = new_subset.at[d, col]
+
+    # Combine old preserved data with new recalculated data
+    result = pd.concat([old_data, new_data], ignore_index=True)
+    result = result.drop_duplicates(subset=["date"], keep="last")
+    result = result.sort_values("date").reset_index(drop=True)
+
+    print(f"[BUILD] Merged: {len(old_data)} preserved days + {len(new_data)} recalculated days")
+    return result
 
 
 # ======================== MAIN RUNNER =======================
@@ -722,31 +772,38 @@ def run():
     """Main pipeline execution for data building and aggregation."""
     os.makedirs(os.path.dirname(COMPLETE_FILE), exist_ok=True)
 
-    # CRITICAL: Load flows from DB first (has complete historical data)
-    # The CSV may only contain recent days when CMC scraper runs in incremental mode
-    new_df = load_flows_from_db()
+    # Try to load flows from database first (has complete history)
+    flows_df = load_flows_from_db()
 
-    # Fallback to CSV if DB not available or empty
-    if new_df.empty:
-        print("[BUILD] Falling back to CSV...")
-        new_df = load_flows_from_csv()
+    # Fallback to CSV if DB not available
+    if flows_df.empty:
+        if not os.path.exists(OUTPUT_CSV):
+            print(f"[ERROR] No flow data available (DB empty and CSV not found: {OUTPUT_CSV})")
+            return
+        flows_df = pd.read_csv(OUTPUT_CSV)
+        if flows_df.empty:
+            print("[ERROR] No flow data available")
+            return
+        print(f"[BUILD] Loaded {len(flows_df)} flows from CSV (fallback)")
 
-    if new_df.empty:
-        print(f"[ERROR] No flow data available from DB or CSV")
-        return
-
-    print(f"[BUILD] Processing {len(new_df)} days of flow data")
-    
     # Robust date column detection
-    if "date" not in new_df.columns and not new_df.empty:
-        # Fallback to the first column if 'date' is missing (e.g., it might be 'Time')
-        print(f"[BUILD] Warning: 'date' column not found, using first column '{new_df.columns[0]}'")
-        new_df.rename(columns={new_df.columns[0]: "date"}, inplace=True)
-        
-    new_df["date"] = pd.to_datetime(new_df["date"], errors="coerce").dt.normalize()
-    new_df = new_df.dropna(subset=["date"]).sort_values("date")
+    if "date" not in flows_df.columns and not flows_df.empty:
+        print(f"[BUILD] Warning: 'date' column not found, using first column '{flows_df.columns[0]}'")
+        flows_df.rename(columns={flows_df.columns[0]: "date"}, inplace=True)
 
-    df = ensure_all_columns(new_df)
+    flows_df["date"] = pd.to_datetime(flows_df["date"], errors="coerce").dt.normalize()
+    flows_df = flows_df.dropna(subset=["date"]).sort_values("date")
+
+    # Load existing data from DB (to preserve NAV, shares, etc.)
+    existing_df = load_existing_data_from_db()
+
+    # Determine recalculation cutoff (always recalculate last RECALC_DAYS)
+    today = datetime.now().date()
+    recalc_from = today - timedelta(days=RECALC_DAYS)
+    print(f"[BUILD] Will recalculate data from {recalc_from} onwards ({RECALC_DAYS} days)")
+
+    # Process flows
+    df = ensure_all_columns(flows_df)
     print("\n[STEP 1] Adding calendar days...")
     df = add_missing_calendar_days(df)
     print("\n[STEP 2] Calculating holdings...")
@@ -759,39 +816,46 @@ def run():
     try:
         m = load_etfdirect_map(ETF_DIRECT_DIR)
         df = override_from_etfdirect(df, m)
-    except Exception as e: print(f"[DIRECT-ERR] {e}")
+    except Exception as e:
+        print(f"[DIRECT-ERR] {e}")
     print("\n[STEP 6] Estimating NAV/SHARES for trading days...")
     ranges = get_etf_active_range(df)
     for etf in ETF_LIST:
         start = ranges.get(etf)
-        if start: df = estimate_nav_and_shares_trading_days(df, etf, start)
+        if start:
+            df = estimate_nav_and_shares_trading_days(df, etf, start)
     print("\n[STEP 7] Calculating remaining SHARES...")
     df = estimate_missing_shares(df)
     print("\n[STEP 8] Propagating data to weekends/holidays...")
     df = propagate_weekend_holidays_data(df)
 
+    # Merge with existing data (preserve old NAV/shares, use new for recent days)
+    if not existing_df.empty:
+        print("\n[STEP 8.5] Merging with existing database data...")
+        df = merge_existing_with_new(existing_df, df, recalc_from)
+
     # Export
     print("\n[STEP 9] Exporting final results...")
-    df["date"] = df["date"].dt.strftime("%Y-%m-%d")
+    df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.strftime("%Y-%m-%d")
     df = df.sort_values("date", ascending=False).reset_index(drop=True)
     df.to_csv(COMPLETE_FILE, index=False)
     print(f"[CSV] Saved: {COMPLETE_FILE} ({len(df)} rows)")
     create_structured_json(df, STRUCT_JSON)
-    
-    # Save enriched data to database
+
+    # Save to database
     print("\n[STEP 10] Saving enriched data to database...")
     try:
         from core.db_adapter import is_db_enabled, init_database
         from core.db import save_completed_etf_data, bulk_upsert_btc_prices
-        
+
         if not is_db_enabled():
             init_database()
-        
+
         if is_db_enabled():
             count = save_completed_etf_data(df)
             print(f"[DB] ✅ Saved {count} enriched records to database")
-            
-            # Save BTC prices to btc_prices table for AUM calculation
+
+            # Save BTC prices
             print("\n[STEP 11] Saving BTC prices to database...")
             btc_prices = []
             for _, row in df.iterrows():
@@ -802,28 +866,17 @@ def run():
                         btc_prices.append((date_val, float(btc_price)))
                 except Exception:
                     continue
-            
+
             if btc_prices:
                 btc_count = bulk_upsert_btc_prices(btc_prices)
                 print(f"[DB] ✅ Saved {btc_count} BTC prices to database")
-            else:
-                print("[DB] No BTC prices to save")
-
-            # Calculate flow_usd using BTC prices
-            print("\n[STEP 12] Calculating flow_usd from BTC prices...")
-            from core.db import calculate_flow_usd_from_btc_prices
-            usd_count = calculate_flow_usd_from_btc_prices()
-            if usd_count > 0:
-                print(f"[DB] ✅ Calculated flow_usd for {usd_count} records")
-            else:
-                print("[DB] All flow_usd values already calculated")
         else:
             print("[DB] Database not enabled, skipping DB save")
     except ImportError as e:
         print(f"[DB] Database modules not available: {e}")
     except Exception as e:
         print(f"[DB] Error saving to database: {e}")
-    
+
     print(f"\n" + "-"*50)
     print(f"PIPELINE SUCCESS: Aggregated data ready.")
     print(f"Files generated:\n - {COMPLETE_FILE}\n - {STRUCT_JSON}")
