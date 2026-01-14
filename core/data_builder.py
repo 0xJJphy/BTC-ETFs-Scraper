@@ -150,20 +150,8 @@ def add_missing_calendar_days(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 # ======================== ETF-DIRECT LOADER ========================
-def _detect_etf_from_etfdirect_filename(fname: str):
-    """Identify which ETF a file belongs to based on its name."""
-    base = os.path.basename(fname).lower()
-    m = re.match(r"([a-z0-9\-\&\_]+)_dailynav\.csv$", base)
-    if not m: return None
-    slug = m.group(1)
-    slug_map = {
-        "btco":"BTCO","ibit":"IBIT","bitb":"BITB","gbtc":"GBTC","fbtc":"FBTC",
-        "hodl":"HODL","brrr":"BRRR","ezbc":"EZBC","arkb":"ARKB","btcw":"BTCW","btc":"BTC",
-        "bosera":"BOSERA&HASHKEY","bosera&hashkey":"BOSERA&HASHKEY",
-        "harvest":"HARVEST","chinaamc":"CHINAAMC",
-    }
-    etf = slug_map.get(slug)
-    return etf if etf in ETF_LIST else None
+# Removed _detect_etf_from_etfdirect_filename and related functions as they are redundant.
+# Raw scraper data now flows directly through the database.
 
 def _parse_date_like(series: pd.Series) -> pd.Series:
     """Parse dates in various formats, including YYYYMMDD."""
@@ -210,142 +198,7 @@ def _to_num(s):
         print(f"[NUM-PARSE] Error converting to numeric: {e}")
         return pd.Series([np.nan] * len(s), dtype=float)
 
-def _read_etfdirect_one(path: str) -> pd.DataFrame:
-    """Read a single ETF-DIRECT CSV file."""
-    try:
-        df = None
-        for encoding in ['utf-8', 'utf-8-sig', 'latin1', 'cp1252']:
-            try:
-                df = pd.read_csv(path, encoding=encoding, low_memory=False)
-                break
-            except UnicodeDecodeError:
-                continue
-        
-        if df is None:
-            print(f"[ETF-DIRECT] Could not read {path} with any encoding")
-            return pd.DataFrame(columns=["date","nav","close","shares"])
-            
-        if df.empty: 
-            print(f"[ETF-DIRECT] Empty file: {path}")
-            return pd.DataFrame(columns=["date","nav","close","shares"])
-
-        df.columns = [col.replace('\ufeff', '').strip() for col in df.columns]
-        
-        fname = os.path.basename(path)
-        print(f"[ETF-DIRECT] Processing {fname} - {len(df)} rows")
-        
-        result = pd.DataFrame()
-        result["date"] = _parse_date_like(df.iloc[:, 0])
-        result["nav"] = _to_num(df.iloc[:, 1])
-        result["close"] = _to_num(df.iloc[:, 2])
-        if len(df.columns) >= 4:
-            result["shares"] = _to_num(df.iloc[:, 3])
-        else:
-            result["shares"] = np.nan
-
-        result = result.dropna(subset=["date"])
-        result = result.loc[(result["nav"].notna()) & (result["nav"] > 0)]
-        
-        if result.empty:
-            print(f"[ETF-DIRECT] WARNING: {fname} has no valid data after filtering")
-            return pd.DataFrame(columns=["date","nav","close","shares"])
-        
-        result = result.sort_values("date").drop_duplicates(subset=["date"], keep="last")
-        print(f"[ETF-DIRECT] {fname} final: {len(result)} rows, from {result['date'].min()} to {result['date'].max()}")
-        
-        return result[["date","nav","close","shares"]]
-        
-    except Exception as e:
-        print(f"[ETF-DIRECT] ERROR processing {path}: {str(e)}")
-        return pd.DataFrame(columns=["date","nav","close","shares"])
-
-def load_etfdirect_map(base_dir: str) -> dict:
-    """Load all ETF-DIRECT CSV files from a directory into a map."""
-    found = {}
-    if not base_dir or not os.path.isdir(base_dir):
-        return found
-    for fname in os.listdir(base_dir):
-        etf = _detect_etf_from_etfdirect_filename(fname)
-        if not etf: continue
-        path = os.path.join(base_dir, fname)
-        edf = _read_etfdirect_one(path)
-        if not edf.empty:
-            found[etf] = edf
-            print(f"[ETF-DIRECT] {etf}: {len(edf)} rows from {path}")
-    return found
-
-def override_from_etfdirect(df: pd.DataFrame, direct_map: dict) -> pd.DataFrame:
-    """Overwrite NAV/SHARES/PRICE in the main DataFrame with data from direct sources."""
-    if not direct_map or df.empty: 
-        print("[ETF-DIRECT] No direct data to process")
-        return df
-
-    result = df.copy()
-    result["date"] = pd.to_datetime(result["date"], errors="coerce").dt.normalize()
-    today = pd.Timestamp(datetime.now().date())
-
-    for etf_name, etf_data in direct_map.items():
-        nav_col = f"{etf_name}-NAVSHARE"
-        close_col = f"CLOSE-{etf_name}"
-        shares_col = f"{etf_name}-SHARES"
-        
-        for col in [nav_col, close_col, shares_col]:
-            if col not in result.columns:
-                result[col] = np.nan
-
-        etf_work = etf_data.copy()
-        etf_work["date"] = pd.to_datetime(etf_work["date"], errors="coerce").dt.normalize()
-
-        if not OVERRIDE_TODAY_NAV:
-            etf_work = etf_work.loc[etf_work["date"] != today]
-
-        common_dates_set = set(result["date"].dropna()).intersection(set(etf_work["date"].dropna()))
-        if not common_dates_set:
-            continue
-
-        common_mask = result["date"].isin(common_dates_set)
-
-        # Update NAV
-        try:
-            nav_data = result.loc[common_mask, ["date"]].merge(
-                etf_work[["date", "nav"]].dropna(subset=["nav"]), 
-                on="date", how="left"
-            )
-            nav_mask = nav_data["nav"].notna()
-            if nav_mask.any():
-                original_indices = result.loc[common_mask].index[nav_mask]
-                result.loc[original_indices, nav_col] = nav_data.loc[nav_mask, "nav"].values
-        except: pass
-
-        # Update Close
-        try:
-            close_data = result.loc[common_mask, ["date"]].merge(
-                etf_work[["date", "close"]].dropna(subset=["close"]),
-                on="date", how="left"
-            )
-            valid = close_data["close"].notna()
-            if valid.any():
-                idx = result.loc[common_mask].index[valid]
-                result.loc[idx, close_col] = close_data.loc[valid, "close"].values
-        except: pass
-
-        # Update Shares
-        try:
-            has_shares = etf_work["shares"].notna().any()
-            if has_shares:
-                shares_need_mask = common_mask & result[shares_col].isna()
-                if shares_need_mask.any():
-                    shares_data = result.loc[shares_need_mask, ["date"]].merge(
-                        etf_work[["date", "shares"]].dropna(subset=["shares"]), 
-                        on="date", how="left"
-                    )
-                    shares_valid_mask = shares_data["shares"].notna()
-                    if shares_valid_mask.any():
-                        original_indices = result.loc[shares_need_mask].index[shares_valid_mask]
-                        result.loc[original_indices, shares_col] = shares_data.loc[shares_valid_mask, "shares"].values
-        except: pass
-
-    return result
+# Removed etfdirect loader and override logic.
 
 # ======================== MARKET DATA (YF) ====================
 def fetch_history_one(ticker: str, start: date, end: date) -> pd.DataFrame:
@@ -364,23 +217,35 @@ def fetch_history_one(ticker: str, start: date, end: date) -> pd.DataFrame:
         print(f"[YF] Error fetching {ticker}: {e}")
         return pd.DataFrame()
 
-def add_btc_close_coinbase(df: pd.DataFrame) -> pd.DataFrame:
+def add_btc_close_coinbase(df: pd.DataFrame, limit_from: date = None) -> pd.DataFrame:
     """Add Bitcoin Price from Coinbase (via Yahoo Finance) to the DataFrame."""
     out = df.copy()
     out["date"] = pd.to_datetime(out["date"], errors="coerce").dt.normalize()
-    dmin, dmax = out["date"].min().date(), out["date"].max().date()
+    
+    if limit_from:
+        dmin = limit_from
+    else:
+        dmin = out["date"].min().date()
+        
+    dmax = out["date"].max().date()
     print(f"[BTC] Downloading BTC-USD (Coinbase) {dmin}..{dmax}")
     hist = fetch_history_one(TICKER_MAP["BTC-PRICE"], dmin, dmax)
-    out["CLOSE-BTC-CB"] = np.nan
+    if "CLOSE-BTC-CB" not in out.columns: out["CLOSE-BTC-CB"] = np.nan
     common = out["date"].isin(hist.index)
     out.loc[common, "CLOSE-BTC-CB"] = hist.loc[out.loc[common, "date"], "close"].values
     return out
 
-def add_etf_yf_close_volume(df: pd.DataFrame) -> pd.DataFrame:
+def add_etf_yf_close_volume(df: pd.DataFrame, limit_from: date = None) -> pd.DataFrame:
     """Add ETF Close and Volume data from Yahoo Finance to the DataFrame."""
     out = df.copy()
     out["date"] = pd.to_datetime(out["date"], errors="coerce").dt.normalize()
-    dmin, dmax = out["date"].min().date(), out["date"].max().date()
+    
+    if limit_from:
+        dmin = limit_from
+    else:
+        dmin = out["date"].min().date()
+        
+    dmax = out["date"].max().date()
     for etf in ETF_LIST:
         tkr = TICKER_MAP.get(etf)
         if not tkr: continue
@@ -808,34 +673,34 @@ def run():
     df = add_missing_calendar_days(df)
     print("\n[STEP 2] Calculating holdings...")
     df = calculate_holdings_cumsum_with_seeds(df)
-    print("\n[STEP 3] Fetching BTC price history...")
-    df = add_btc_close_coinbase(df)
-    print("\n[STEP 4] Fetching ETF market data...")
-    df = add_etf_yf_close_volume(df)
-    print("\n[STEP 5] Applying direct source overrides...")
-    try:
-        m = load_etfdirect_map(ETF_DIRECT_DIR)
-        df = override_from_etfdirect(df, m)
-    except Exception as e:
-        print(f"[DIRECT-ERR] {e}")
+    print("\n[STEP 3] Fetching BTC price history (incremental window)...")
+    fetch_start = recalc_from - timedelta(days=7) # Safety margin for baseline
+    df = add_btc_close_coinbase(df, limit_from=fetch_start)
+    print("\n[STEP 4] Fetching ETF market data (incremental window)...")
+    df = add_etf_yf_close_volume(df, limit_from=fetch_start)
+
+    # Merge with existing data (preserve old NAV/shares, use new for recent days)
+    # IMPORTANT: Do this BEFORE NAV estimation so we have a baseline for "prev_data"
+    # Also provides the raw scraper data from database for today's run.
+    if not existing_df.empty:
+        print("\n[STEP 5] Merging with existing database data...")
+        df = merge_existing_with_new(existing_df, df, recalc_from)
+
     print("\n[STEP 6] Estimating NAV/SHARES for trading days...")
     ranges = get_etf_active_range(df)
     for etf in ETF_LIST:
         start = ranges.get(etf)
         if start:
+            # We only really need to estimate for recalc window
             df = estimate_nav_and_shares_trading_days(df, etf, start)
+
     print("\n[STEP 7] Calculating remaining SHARES...")
     df = estimate_missing_shares(df)
     print("\n[STEP 8] Propagating data to weekends/holidays...")
     df = propagate_weekend_holidays_data(df)
 
-    # Merge with existing data (preserve old NAV/shares, use new for recent days)
-    if not existing_df.empty:
-        print("\n[STEP 8.5] Merging with existing database data...")
-        df = merge_existing_with_new(existing_df, df, recalc_from)
-
     # Export
-    print("\n[STEP 9] Exporting final results...")
+    print("\n[STEP 11] Exporting final results...")
     df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.strftime("%Y-%m-%d")
     df = df.sort_values("date", ascending=False).reset_index(drop=True)
     df.to_csv(COMPLETE_FILE, index=False)
@@ -843,7 +708,7 @@ def run():
     create_structured_json(df, STRUCT_JSON)
 
     # Save to database
-    print("\n[STEP 10] Saving enriched data to database...")
+    print("\n[STEP 12] Saving enriched data to database...")
     try:
         from core.db_adapter import is_db_enabled, init_database
         from core.db import save_completed_etf_data, bulk_upsert_btc_prices
@@ -856,7 +721,7 @@ def run():
             print(f"[DB] ✅ Saved {count} enriched records to database")
 
             # Save BTC prices
-            print("\n[STEP 11] Saving BTC prices to database...")
+            print("\n[STEP 13] Saving BTC prices to database...")
             btc_prices = []
             for _, row in df.iterrows():
                 try:
