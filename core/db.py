@@ -467,6 +467,10 @@ def get_all_flows_wide_format() -> pd.DataFrame:
         # Convert to DataFrame
         df_long = pd.DataFrame(result)
 
+        # Convert Decimal to float to avoid type errors in calculations
+        if 'flow_btc' in df_long.columns:
+            df_long['flow_btc'] = pd.to_numeric(df_long['flow_btc'], errors='coerce')
+
         # Map DB tickers to CMC column names
         df_long['column_name'] = df_long['ticker'].map(ticker_to_column)
         df_long = df_long.dropna(subset=['column_name'])
@@ -529,6 +533,12 @@ def get_all_etf_data_wide_format() -> pd.DataFrame:
 
         df = pd.DataFrame(result)
 
+        # Convert Decimal columns to float to avoid type errors in calculations
+        numeric_cols = ['nav', 'market_price', 'shares_outstanding', 'holdings_btc', 'volume']
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+
         # Map tickers to column names
         df['etf_name'] = df['ticker'].map(ticker_to_column)
         df = df.dropna(subset=['etf_name'])
@@ -552,7 +562,9 @@ def get_all_etf_data_wide_format() -> pd.DataFrame:
         )
         if btc_prices_result:
             btc_df = pd.DataFrame(btc_prices_result)
-            btc_prices_dict = dict(zip(btc_df['date'], btc_df['price_usd']))
+            # Convert Decimal to float to avoid type errors in calculations
+            btc_prices_dict = {d: float(p) if p is not None else None
+                              for d, p in zip(btc_df['date'], btc_df['price_usd'])}
             wide_data['CLOSE-BTC-CB'] = [btc_prices_dict.get(d) for d in wide_data['date']]
             logger.info(f"[DB] Also loaded {len(btc_prices_dict)} BTC prices")
 
