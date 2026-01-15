@@ -494,8 +494,8 @@ def get_all_etf_data_wide_format() -> pd.DataFrame:
     """
     Get all ETF data from database in wide format (like the final CSV).
 
-    Returns a DataFrame with columns: date, GBTC-NAVSHARE, GBTC-HOLDINGS, etc.
-    This preserves existing calculated data (NAV, shares, holdings).
+    Returns a DataFrame with columns: date, GBTC-NAVSHARE, GBTC-HOLDINGS, CLOSE-BTC-CB, etc.
+    This preserves existing calculated data (NAV, shares, holdings) and includes BTC prices.
     """
     # DB ticker -> CMC column name mapping
     ticker_to_column = {
@@ -544,6 +544,17 @@ def get_all_etf_data_wide_format() -> pd.DataFrame:
             wide_data[f'{etf_name}-SHARES'] = [etf_data.loc[d, 'shares_outstanding'] if d in etf_data.index else None for d in wide_data['date']]
             wide_data[f'CLOSE-{etf_name}'] = [etf_data.loc[d, 'market_price'] if d in etf_data.index else None for d in wide_data['date']]
             wide_data[f'{etf_name}-VOLUMEN'] = [etf_data.loc[d, 'volume'] if d in etf_data.index else None for d in wide_data['date']]
+
+        # Also load BTC prices and add as CLOSE-BTC-CB column
+        btc_prices_result = execute_query(
+            "SELECT date, price_usd FROM btc_prices ORDER BY date",
+            fetch=True
+        )
+        if btc_prices_result:
+            btc_df = pd.DataFrame(btc_prices_result)
+            btc_prices_dict = dict(zip(btc_df['date'], btc_df['price_usd']))
+            wide_data['CLOSE-BTC-CB'] = [btc_prices_dict.get(d) for d in wide_data['date']]
+            logger.info(f"[DB] Also loaded {len(btc_prices_dict)} BTC prices")
 
         df_wide = pd.DataFrame(wide_data)
         logger.info(f"[DB] Loaded {len(df_wide)} days of ETF data from database")

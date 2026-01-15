@@ -593,7 +593,13 @@ def load_btc_prices_from_db() -> pd.Series:
 def merge_existing_with_new(existing_df: pd.DataFrame, new_df: pd.DataFrame, recalc_from: date) -> pd.DataFrame:
     """
     Merge existing data with new calculations.
-    Keep existing data for dates before recalc_from, use new data for dates >= recalc_from.
+
+    For dates before recalc_from:
+        - Prefer existing NAV/shares (preserve calculated values)
+        - Take flows, holdings, BTC prices from new_df
+        - Include dates that only exist in new_df
+
+    For dates >= recalc_from: use new calculations entirely
     """
     if existing_df.empty:
         return new_df
@@ -607,28 +613,53 @@ def merge_existing_with_new(existing_df: pd.DataFrame, new_df: pd.DataFrame, rec
     new_df["date"] = pd.to_datetime(new_df["date"], errors="coerce").dt.normalize()
     recalc_ts = pd.Timestamp(recalc_from)
 
-    # For dates before recalc_from: prefer existing data (preserve NAV, shares)
-    # For dates >= recalc_from: use new calculations
-    old_data = existing_df[existing_df["date"] < recalc_ts].copy()
-    new_data = new_df[new_df["date"] >= recalc_ts].copy()
+    # Split new_df into old period and recalc period
+    new_old_period = new_df[new_df["date"] < recalc_ts].copy()
+    new_recalc_period = new_df[new_df["date"] >= recalc_ts].copy()
 
-    # For old data, fill in flow columns from new_df if they exist
-    if not old_data.empty and not new_df.empty:
-        for col in ETF_LIST + ["Total"]:
-            if col in new_df.columns and col in old_data.columns:
-                old_dates = old_data["date"]
-                new_subset = new_df[new_df["date"].isin(old_dates)].set_index("date")
-                for idx, row in old_data.iterrows():
-                    d = row["date"]
-                    if d in new_subset.index and pd.isna(old_data.at[idx, col]):
-                        old_data.at[idx, col] = new_subset.at[d, col]
+    # Get existing data for old period
+    existing_old_period = existing_df[existing_df["date"] < recalc_ts].copy()
 
-    # Combine old preserved data with new recalculated data
-    result = pd.concat([old_data, new_data], ignore_index=True)
+    # Columns to preserve from existing data (calculated values)
+    preserve_cols = []
+    for etf in ETF_LIST:
+        preserve_cols.extend([f"{etf}-NAVSHARE", f"{etf}-SHARES"])
+
+    # Merge old periods: start with new_df data (has flows, holdings, BTC prices)
+    # Then overlay existing NAV/shares values
+    if not new_old_period.empty:
+        merged_old = new_old_period.copy()
+
+        if not existing_old_period.empty:
+            existing_indexed = existing_old_period.set_index("date")
+
+            for idx, row in merged_old.iterrows():
+                d = row["date"]
+                if d in existing_indexed.index:
+                    for col in preserve_cols:
+                        if col in existing_indexed.columns:
+                            existing_val = existing_indexed.at[d, col]
+                            # Prefer existing NAV/shares if they are valid
+                            if pd.notna(existing_val) and existing_val > 0:
+                                merged_old.at[idx, col] = existing_val
+
+                    # Also preserve CLOSE-BTC-CB from existing if new is missing
+                    if 'CLOSE-BTC-CB' in existing_indexed.columns:
+                        existing_btc = existing_indexed.at[d, 'CLOSE-BTC-CB']
+                        new_btc = merged_old.at[idx, 'CLOSE-BTC-CB'] if 'CLOSE-BTC-CB' in merged_old.columns else None
+                        if pd.notna(existing_btc) and (pd.isna(new_btc) or new_btc == 0):
+                            if 'CLOSE-BTC-CB' not in merged_old.columns:
+                                merged_old['CLOSE-BTC-CB'] = np.nan
+                            merged_old.at[idx, 'CLOSE-BTC-CB'] = existing_btc
+    else:
+        merged_old = existing_old_period.copy()
+
+    # Combine merged old period with recalculated new period
+    result = pd.concat([merged_old, new_recalc_period], ignore_index=True)
     result = result.drop_duplicates(subset=["date"], keep="last")
     result = result.sort_values("date").reset_index(drop=True)
 
-    print(f"[BUILD] Merged: {len(old_data)} preserved days + {len(new_data)} recalculated days")
+    print(f"[BUILD] Merged: {len(merged_old)} preserved/merged days + {len(new_recalc_period)} recalculated days")
     return result
 
 
