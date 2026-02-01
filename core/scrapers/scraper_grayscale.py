@@ -31,21 +31,29 @@ def find_etf_row_grayscale(driver, etf):
 
     # Wait for the table or any row to be present
     try:
-        WebDriverWait(driver, 20).until(
+        WebDriverWait(driver, 15).until(
             EC.presence_of_element_located((By.XPATH, "//tr | //table"))
         )
     except:
-        print("[DEBUG] Timeout waiting for initial table structure.")
+        print("[DEBUG] Warning: Initial table structure (tr/table) not detected by wait.")
 
     # Strategy: Incremental scroll and search (Grayscale rows load dynamically)
-    max_scrolls = 8
-    scroll_amount = 800
+    max_scrolls = 10
+    scroll_amount = 700
     
     for i in range(max_scrolls):
+        # Scan ALL rows for debugging if needed
+        all_trs = driver.find_elements(By.XPATH, "//tr")
+        if i == 0:
+            print(f"[DEBUG] Initial row count: {len(all_trs)}")
+            if all_trs:
+                # Print first few row texts to understand what's on screen
+                for j, tr in enumerate(all_trs[:5]):
+                    print(f"  Row {j}: '{tr.text.strip().replace('\n', ' | ')[:100]}'")
+        
         # Build XPaths
         xps = []
         for t in terms:
-            # Case-insensitive XPath 1.0 (standard way)
             low_t = t.lower()
             xps.append(f"//tr[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{low_t}')]")
         
@@ -54,21 +62,35 @@ def find_etf_row_grayscale(driver, etf):
             try:
                 rows = driver.find_elements(By.XPATH, xp)
                 for r in rows:
-                    if r.is_displayed():
-                        txt = (r.text or "").strip()
-                        # Double check with Python logic for precision
-                        if any(t.lower() in txt.lower() for t in terms):
-                            print(f"[DEBUG] Found row: '{txt[:50]}...' at scroll step {i}")
-                            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", r)
-                            time.sleep(1)
-                            return r
+                    txt = (r.text or "").strip()
+                    visible = r.is_displayed()
+                    
+                    # Log even if not strictly "displayed" in headless
+                    if any(t.lower() in txt.lower() for t in terms):
+                        print(f"[DEBUG] Candidate found: '{txt[:60]}...' (Visible={visible}) at scroll {i}")
+                        
+                        # In headless environments, is_displayed() can be flaky
+                        # We accept it if the text matches and we can scroll to it
+                        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", r)
+                        time.sleep(1)
+                        return r
             except:
                 continue
         
         # Not found, scroll down
-        print(f"[DEBUG] Row not found yet, scrolling down... ({i+1}/{max_scrolls})")
+        print(f"[DEBUG] Scrolling down... ({i+1}/{max_scrolls}) total rows visible: {len(all_trs)}")
         driver.execute_script(f"window.scrollBy(0, {scroll_amount});")
-        time.sleep(2) # Wait for potential lazy loading
+        time.sleep(2)
+
+    # Final diagnostic: Save screenshot if not found (useful in Actions)
+    try:
+        debug_shot = os.path.join(OUTPUT_BASE_DIR, f"debug_grayscale_{etf['name'].replace(' ', '_')}.png")
+        driver.save_screenshot(debug_shot)
+        print(f"[DEBUG] ETF not found. Screenshot saved to: {debug_shot}")
+        # Also print page source length for sanity check
+        print(f"[DEBUG] Page source length: {len(driver.page_source)} characters")
+    except:
+        pass
 
     return None
 
@@ -117,6 +139,16 @@ def process_single_etf_grayscale(driver, etf, site_url):
     tmp_source = os.path.join(CSV_DIR, base + "_source.xlsx")
     print(f"\n[ETF] Processing {name} (Grayscale)  → output .{SAVE_FORMAT}")
     print("="*50)
+
+    try:
+        driver.get(site_url)
+        polite_sleep()
+        accept_cookies_grayscale(driver)
+        polite_sleep()
+        # Diagnostic: Screen after cookies
+        driver.save_screenshot(os.path.join(OUTPUT_BASE_DIR, "debug_grayscale_after_cookies.png"))
+    except:
+        pass
 
     from_row = find_etf_row_grayscale(driver, etf)
     if not from_row:
