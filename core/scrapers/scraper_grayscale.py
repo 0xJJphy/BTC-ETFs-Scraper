@@ -49,7 +49,8 @@ def find_etf_row_grayscale(driver, etf):
             if all_trs:
                 # Print first few row texts to understand what's on screen
                 for j, tr in enumerate(all_trs[:5]):
-                    print(f"  Row {j}: '{tr.text.strip().replace('\n', ' | ')[:100]}'")
+                    clean_text = tr.text.strip().replace('\n', ' | ')[:100]
+                    print(f"  Row {j}: '{clean_text}'")
         
         # Build XPaths
         xps = []
