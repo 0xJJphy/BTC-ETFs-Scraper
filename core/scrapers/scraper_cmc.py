@@ -22,14 +22,16 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"
 try:
     from core.utils.helpers import (
         polite_sleep, setup_driver, save_dataframe, 
-        SAVE_FORMAT, CSV_DIR, JSON_DIR, _get_chrome_major_version
+        SAVE_FORMAT, CSV_DIR, JSON_DIR, _get_chrome_major_version,
+        OUTPUT_BASE_DIR
     )
 except ImportError:
     # Fallback for standalone execution if sys.path trick fails
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../utils")))
     from helpers import (
         polite_sleep, setup_driver, save_dataframe, 
-        SAVE_FORMAT, CSV_DIR, JSON_DIR, _get_chrome_major_version
+        SAVE_FORMAT, CSV_DIR, JSON_DIR, _get_chrome_major_version,
+        OUTPUT_BASE_DIR
     )
 
 # CMC Specific Config
@@ -465,6 +467,12 @@ def process_cmc_flows(driver, base_name="cmc_bitcoin_etf_flows_btc"):
     except Exception as e:
         msg = f"CMC error: {e}"
         print(f"[CMC ERROR] {msg}")
+        # Diagnostic: Screen on error
+        try:
+            shot_err = os.path.join(OUTPUT_BASE_DIR, f"debug_cmc_error_{int(time.time())}.png")
+            driver.save_screenshot(shot_err)
+            print(f"[CMC] Error screenshot saved: {shot_err}")
+        except: pass
         return False, msg
 
 

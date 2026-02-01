@@ -14,14 +14,14 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"
 try:
     from core.utils.helpers import (
         polite_sleep, save_dataframe, _try_click_any,
-        setup_driver, SAVE_FORMAT
+        setup_driver, SAVE_FORMAT, OUTPUT_BASE_DIR
     )
 except ImportError:
     # Fallback for standalone execution if sys.path trick fails
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../utils")))
     from helpers import (
         polite_sleep, save_dataframe, _try_click_any,
-        setup_driver, SAVE_FORMAT
+        setup_driver, SAVE_FORMAT, OUTPUT_BASE_DIR
     )
 
 BITWISE_YF_TICKER = "BITB"
@@ -205,6 +205,12 @@ def process_single_etf_bitwise(driver, etf, site_url):
     except Exception as e:
         msg = f"Bitwise error: {e}"
         print(f"[BITWISE ERROR] {msg}")
+        # Diagnostic: Screen on error
+        try:
+            shot_err = os.path.join(OUTPUT_BASE_DIR, f"debug_bitwise_error_{int(time.time())}.png")
+            driver.save_screenshot(shot_err)
+            print(f"[BITWISE] Error screenshot saved: {shot_err}")
+        except: pass
         return False, msg
 
 def main():

@@ -15,7 +15,7 @@ if str(root_path) not in sys.path:
 
 from core.utils.helpers import (
     polite_sleep, normalize_date_column, save_dataframe,
-    _try_click_any, setup_driver, SAVE_FORMAT
+    _try_click_any, setup_driver, SAVE_FORMAT, OUTPUT_BASE_DIR
 )
 
 
@@ -233,6 +233,11 @@ def process_single_etf_wisdomtree(driver, etf, site_url):
         accept_cookies_wisdomtree(dedicated_driver)
         polite_sleep()
         
+        # Diagnostic: Screen after cookies
+        shot_path = os.path.join(OUTPUT_BASE_DIR, "debug_wisdomtree_after_cookies.png")
+        dedicated_driver.save_screenshot(shot_path)
+        print(f"[WISDOMTREE] Screenshot after cookies: {shot_path}")
+        
         _wisdomtree_open_history_modal(dedicated_driver)
         df = _wisdomtree_parse_table(dedicated_driver)
         
@@ -247,6 +252,12 @@ def process_single_etf_wisdomtree(driver, etf, site_url):
     except Exception as e:
         msg = f"Error: {e}"
         print(f"[WISDOMTREE ERROR] {msg}")
+        # Diagnostic: Screen on error
+        try:
+            shot_err = os.path.join(OUTPUT_BASE_DIR, f"debug_wisdomtree_error_{int(time.time())}.png")
+            dedicated_driver.save_screenshot(shot_err)
+            print(f"[WISDOMTREE] Error screenshot saved: {shot_err}")
+        except: pass
         return False, msg
     finally:
         if dedicated_driver:

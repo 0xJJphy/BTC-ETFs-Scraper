@@ -9,7 +9,8 @@ from core.utils.helpers import (
     polite_sleep, _session_from_driver, download_url_to_file,
     normalize_date_column, save_dataframe, _safe_remove,
     _find_col, _try_click_any, _yf_close_by_date,
-    setup_driver, CSV_DIR, JSON_DIR, SAVE_FORMAT, TIMEOUT
+    setup_driver, CSV_DIR, JSON_DIR, SAVE_FORMAT, TIMEOUT,
+    OUTPUT_BASE_DIR
 )
 
 _SS_NS = {'ss': 'urn:schemas-microsoft-com:office:spreadsheet'}
@@ -192,6 +193,12 @@ def process_single_etf_ishares(driver, etf, site_url):
     except Exception as e:
         msg = f"SpreadsheetML processing failed: {e}"
         print(f"[ERROR] {msg}")
+        # Diagnostic: Screen on error
+        try:
+            shot_err = os.path.join(OUTPUT_BASE_DIR, f"debug_ishares_error_{int(time.time())}.png")
+            driver.save_screenshot(shot_err)
+            print(f"[ISHARES] Error screenshot saved: {shot_err}")
+        except: pass
         _safe_remove(temp_xls)
         return False, msg
 
