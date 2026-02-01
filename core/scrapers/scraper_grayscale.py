@@ -28,10 +28,21 @@ def find_etf_row_grayscale(driver, etf):
     
     terms = etf["search_terms"]
     print(f"[DEBUG] Searching for Grayscale ETF with terms: {terms}")
+    print(f"[DEBUG] Current URL: {driver.current_url}")
+    print(f"[DEBUG] Page Title: '{driver.title}'")
+
+    # Anti-bot detection
+    source_lower = driver.page_source.lower()
+    if "access denied" in source_lower or "403 forbidden" in source_lower:
+        print("[DEBUG] !!! DETECTED BLOCK: Access Denied / 403 Forbidden")
+    elif "cloudflare" in source_lower or "just a moment" in source_lower:
+        print("[DEBUG] !!! DETECTED BLOCK: Cloudflare Challenge")
+    elif "enable javascript" in source_lower:
+        print("[DEBUG] !!! DETECTED BLOCK: JavaScript Required (rendering failure)")
 
     # Wait for the table or any row to be present
     try:
-        WebDriverWait(driver, 15).until(
+        WebDriverWait(driver, 20).until(
             EC.presence_of_element_located((By.XPATH, "//tr | //table"))
         )
     except:
@@ -142,14 +153,17 @@ def process_single_etf_grayscale(driver, etf, site_url):
     print("="*50)
 
     try:
+        print(f"[DEBUG] Navigating to resources site: {site_url}")
         driver.get(site_url)
-        polite_sleep()
+        time.sleep(5) # Extra wait for initial load 
         accept_cookies_grayscale(driver)
         polite_sleep()
         # Diagnostic: Screen after cookies
-        driver.save_screenshot(os.path.join(OUTPUT_BASE_DIR, "debug_grayscale_after_cookies.png"))
-    except:
-        pass
+        shot_path = os.path.join(OUTPUT_BASE_DIR, "debug_grayscale_after_cookies.png")
+        driver.save_screenshot(shot_path)
+        print(f"[DEBUG] Screenshot taken after cookies: {shot_path}")
+    except Exception as e:
+        print(f"[DEBUG] Navigation/Cookie error: {e}")
 
     from_row = find_etf_row_grayscale(driver, etf)
     if not from_row:
