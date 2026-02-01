@@ -21,39 +21,55 @@ def accept_cookies_grayscale(driver):
     ], wait_sec=10)
 
 def find_etf_row_grayscale(driver, etf):
-    """Find the specific ETF row in the Grayscale resources table."""
-    # Wait for table to load (Material-UI renders dynamically)
+    """Find the specific ETF row in the Grayscale resources table with robust scrolling."""
+    # Ensure we are at the top if starting fresh
+    driver.execute_script("window.scrollTo(0, 0);")
+    time.sleep(1)
+    
+    terms = etf["search_terms"]
+    print(f"[DEBUG] Searching for Grayscale ETF with terms: {terms}")
+
+    # Wait for the table or any row to be present
     try:
-        from selenium.webdriver.support.ui import WebDriverWait
-        from selenium.webdriver.support import expected_conditions as EC
-        WebDriverWait(driver, 15).until(
-            EC.presence_of_element_located((By.XPATH, "//tr[contains(.,'Bitcoin')]"))
+        WebDriverWait(driver, 20).until(
+            EC.presence_of_element_located((By.XPATH, "//tr | //table"))
         )
     except:
-        pass
+        print("[DEBUG] Timeout waiting for initial table structure.")
 
-    # Scroll down to load lazy-loaded content
-    try:
-        driver.execute_script("window.scrollTo(0, 500);")
-        time.sleep(1)
-        driver.execute_script("window.scrollTo(0, 0);")
-        time.sleep(0.5)
-    except:
-        pass
+    # Strategy: Incremental scroll and search (Grayscale rows load dynamically)
+    max_scrolls = 8
+    scroll_amount = 800
+    
+    for i in range(max_scrolls):
+        # Build XPaths
+        xps = []
+        for t in terms:
+            # Case-insensitive XPath 1.0 (standard way)
+            low_t = t.lower()
+            xps.append(f"//tr[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{low_t}')]")
+        
+        # Try all XPaths
+        for xp in xps:
+            try:
+                rows = driver.find_elements(By.XPATH, xp)
+                for r in rows:
+                    if r.is_displayed():
+                        txt = (r.text or "").strip()
+                        # Double check with Python logic for precision
+                        if any(t.lower() in txt.lower() for t in terms):
+                            print(f"[DEBUG] Found row: '{txt[:50]}...' at scroll step {i}")
+                            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", r)
+                            time.sleep(1)
+                            return r
+            except:
+                continue
+        
+        # Not found, scroll down
+        print(f"[DEBUG] Row not found yet, scrolling down... ({i+1}/{max_scrolls})")
+        driver.execute_script(f"window.scrollBy(0, {scroll_amount});")
+        time.sleep(2) # Wait for potential lazy loading
 
-    terms = etf["search_terms"]
-    xps = []
-    for t in terms:
-        xps += [f"//tr[contains(.,'{t}')]", f"//table//tr[contains(.,'{t}')]",
-                f"//tr[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'{t.lower()}')]"]
-    for xp in xps:
-        try:
-            rows = driver.find_elements(By.XPATH, xp)
-            for r in rows:
-                txt = (r.text or "").lower()
-                if any(t.lower() in txt for t in terms):
-                    return r
-        except: pass
     return None
 
 def find_xlsx_link_in_row(driver, row):
