@@ -1,5 +1,6 @@
 import os
 import time
+import random
 import pandas as pd
 from urllib.parse import urljoin
 from selenium.webdriver.common.by import By
@@ -9,7 +10,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from core.utils.helpers import (
     polite_sleep, _session_from_driver, download_url_to_file,
     normalize_date_column, save_dataframe, _safe_remove,
-    _find_col, _try_click_any, setup_driver, CSV_DIR, JSON_DIR, SAVE_FORMAT, TIMEOUT
+    _find_col, _try_click_any, setup_driver, CSV_DIR, JSON_DIR, 
+    SAVE_FORMAT, TIMEOUT, OUTPUT_BASE_DIR
 )
 
 def accept_cookies_grayscale(driver):
@@ -153,11 +155,25 @@ def process_single_etf_grayscale(driver, etf, site_url):
     print("="*50)
 
     try:
+        # Strategy: Hit the home page first to establish a "human" session
+        base_url = "https://www.grayscale.com"
+        print(f"[DEBUG] Establishing session at: {base_url}")
+        driver.get(base_url)
+        time.sleep(random.uniform(3, 6))
+        
         print(f"[DEBUG] Navigating to resources site: {site_url}")
         driver.get(site_url)
-        time.sleep(5) # Extra wait for initial load 
+        time.sleep(8) # Robust wait for Vercel/Cloudflare render
+        
+        # Check if we are stuck on security checkpoint
+        if "Security Checkpoint" in driver.title:
+            print("[DEBUG] !!! Still stuck on Vercel Security Checkpoint. Trying a refresh...")
+            driver.refresh()
+            time.sleep(10)
+
         accept_cookies_grayscale(driver)
         polite_sleep()
+        
         # Diagnostic: Screen after cookies
         shot_path = os.path.join(OUTPUT_BASE_DIR, "debug_grayscale_after_cookies.png")
         driver.save_screenshot(shot_path)
