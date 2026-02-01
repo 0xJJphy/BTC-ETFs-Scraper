@@ -22,14 +22,14 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"
 try:
     from core.utils.helpers import (
         polite_sleep, setup_driver, save_dataframe, 
-        SAVE_FORMAT, CSV_DIR, JSON_DIR
+        SAVE_FORMAT, CSV_DIR, JSON_DIR, _get_chrome_major_version
     )
 except ImportError:
     # Fallback for standalone execution if sys.path trick fails
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../utils")))
     from helpers import (
         polite_sleep, setup_driver, save_dataframe, 
-        SAVE_FORMAT, CSV_DIR, JSON_DIR
+        SAVE_FORMAT, CSV_DIR, JSON_DIR, _get_chrome_major_version
     )
 
 # CMC Specific Config
@@ -480,7 +480,11 @@ def _setup_uc_driver(headless=False):
     if headless:
         options.add_argument("--headless=new")
     
-    driver = uc.Chrome(options=options, use_subprocess=False)
+    driver = uc.Chrome(
+        options=options, 
+        use_subprocess=False,
+        version_main=_get_chrome_major_version()
+    )
     driver.set_window_size(1920, 1080)
     time.sleep(2)  # Allow driver to stabilize
     return driver

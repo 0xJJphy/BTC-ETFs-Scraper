@@ -20,6 +20,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import yfinance as yf
+import subprocess
 
 # ======================== BASE CONFIGURATION ========================
 
@@ -178,6 +179,52 @@ def setup_driver(headless=None):
     return _setup_standard_driver(headless)
 
 
+def _get_chrome_major_version():
+    """Detecta la versión principal (major) de Chrome instalada en el sistema."""
+    # 1. Intentar en Windows vía Registro
+    if os.name == 'nt':
+        try:
+            import winreg
+            keys = [
+                (winreg.HKEY_CURRENT_USER, r"Software\Google\Chrome\BLBeacon"),
+                (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Google Chrome"),
+                (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Google\Chrome\BLBeacon")
+            ]
+            for hkey, path in keys:
+                try:
+                    with winreg.OpenKey(hkey, path) as key:
+                        version, _ = winreg.QueryValueEx(key, "version")
+                        major = int(version.split(".")[0])
+                        return major
+                except:
+                    continue
+        except Exception:
+            pass
+
+    # 2. Intentar vía línea de comandos (Linux/Mac/Windows)
+    commands = [
+        ["google-chrome", "--version"],
+        ["google-chrome-stable", "--version"],
+        ["chromium", "--version"],
+        ["chromium-browser", "--version"],
+        # Windows alternativo
+        ["powershell", "-command", "(Get-Item 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe').VersionInfo.ProductVersion"],
+        ["powershell", "-command", "(Get-Item 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe').VersionInfo.ProductVersion"]
+    ]
+    
+    for cmd in commands:
+        try:
+            output = subprocess.check_output(cmd, stderr=subprocess.STDOUT).decode('utf-8')
+            # Buscar el primer número largo (ej: 121.0.6167.184 o solo 121)
+            match = re.search(r'(\d+)\.', output) or re.search(r'(\d+)', output)
+            if match:
+                return int(match.group(1))
+        except Exception:
+            continue
+
+    return None
+
+
 def _setup_undetected_driver(headless: bool):
     """Configura undetected-chromedriver"""
     try:
@@ -207,12 +254,17 @@ def _setup_undetected_driver(headless: bool):
         }
         options.add_experimental_option("prefs", prefs)
         
+        # Detectar versión para evitar desajustes de ChromeDriver
+        major_version = _get_chrome_major_version()
+        if major_version:
+            print(f"[DRIVER] Versión detectada de Chrome: {major_version}")
+        
         # Crear driver
         driver = uc.Chrome(
             options=options,
             headless=headless,
             use_subprocess=True,
-            version_main=None,  # Auto-detectar versión de Chrome
+            version_main=major_version,  # Usar versión detectada
         )
         
         # Configurar timeouts
