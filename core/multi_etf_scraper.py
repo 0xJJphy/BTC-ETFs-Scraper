@@ -254,20 +254,26 @@ def run(headless=True, save_format=None):
     os.makedirs(CSV_DIR, exist_ok=True)
     os.makedirs(JSON_DIR, exist_ok=True)
     
-    driver = setup_driver(headless)
     all_results = {}
     try:
         for site in SITES_CONFIG:
-            all_results[site["name"]] = process_site(driver, site)
+            # We use a fresh driver for each site for maximum stability in CI.
+            # Some sites (like Grayscale) will create their own dedicated driver 
+            # and ignore this one, which is fine as long as we close what we open.
+            driver = setup_driver(headless)
+            try:
+                all_results[site["name"]] = process_site(driver, site)
+            finally:
+                if driver:
+                    try: driver.quit()
+                    except: pass
+                    
         final_directory_cleanup()
         print_final_summary(all_results)
         return True
     except Exception as e:
         print(f"[CRITICAL] Multi-scraper execution failed: {e}")
         return False
-    finally:
-        try: driver.quit()
-        except: pass
 
 def main():
     """CLI entry point for multi-ETF scraping."""

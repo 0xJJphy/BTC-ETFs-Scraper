@@ -40,17 +40,26 @@ def simulate_human_activity(driver):
     """
     try:
         from selenium.webdriver.common.action_chains import ActionChains
-        # 1. Random mouse movements
-        actions = ActionChains(driver)
+        # 1. Start from a known position (center of body) to avoid 'out of bounds'
+        # in headless environments where mouse might start at infinity or (0,0)
+        try:
+            body = driver.find_element(By.TAG_NAME, "body")
+            # Move to center of body first
+            ActionChains(driver).move_to_element(body).perform()
+        except: pass
+
+        # 2. Random mouse movements
         for _ in range(3):
             try:
-                x = random.randint(-50, 50)
-                y = random.randint(-50, 50)
+                actions = ActionChains(driver)
+                # Smaller offsets to keep within typical viewport
+                x = random.randint(-40, 40)
+                y = random.randint(-40, 40)
                 actions.move_by_offset(x, y).pause(random.uniform(0.1, 0.3))
+                actions.perform()
             except: pass
-        actions.perform()
         
-        # 2. Small random scrolls
+        # 3. Small random scrolls
         for _ in range(2):
             scroll_y = random.randint(100, 300)
             driver.execute_script(f"window.scrollBy(0, {scroll_y});")
