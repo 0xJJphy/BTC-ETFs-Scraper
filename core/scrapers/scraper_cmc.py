@@ -478,21 +478,8 @@ def process_cmc_flows(driver, base_name="cmc_bitcoin_etf_flows_btc"):
 
 def _setup_uc_driver(headless=False):
     """Create an undetected Chrome driver to bypass anti-bot detection."""
-    options = uc.ChromeOptions()
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_argument("--no-first-run")
-    options.add_argument("--no-service-autorun")
-    options.add_argument("--password-store=basic")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--no-sandbox")
-    if headless:
-        options.add_argument("--headless=new")
-    
-    driver = uc.Chrome(
-        options=options, 
-        use_subprocess=False,
-        version_main=_get_chrome_major_version()
-    )
+    # Using the centralized setup_driver from helpers
+    driver = setup_driver(headless=headless)
     driver.set_window_size(1920, 1080)
     time.sleep(2)  # Allow driver to stabilize
     return driver

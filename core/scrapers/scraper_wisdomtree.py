@@ -214,18 +214,12 @@ def process_single_etf_wisdomtree(driver, etf, site_url):
     
     dedicated_driver = None
     try:
-        import undetected_chromedriver as uc
-        
-        options = uc.ChromeOptions()
-        options.add_argument("--window-size=1920,1080")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        
-        # Detect headless mode from environment
+        # Auto-detect headless mode from environment
         headless = os.environ.get("DISPLAY") is None or os.environ.get("ETF_HEADLESS", "false").lower() == "true"
         
-        dedicated_driver = uc.Chrome(options=options, headless=headless, use_subprocess=True)
-        print(f"[WISDOMTREE] ✅ undetected-chromedriver initialized (headless={headless})")
+        # Use setup_driver from helpers to ensure Chrome version detection and anti-bot patches
+        dedicated_driver = setup_driver(headless=headless)
+        print(f"[WISDOMTREE] ✅ driver initialized via helpers (headless={headless})")
         
         dedicated_driver.get(site_url)
         polite_sleep()
