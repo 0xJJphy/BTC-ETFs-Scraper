@@ -11,7 +11,8 @@ from core.utils.helpers import (
     polite_sleep, _session_from_driver, download_url_to_file,
     normalize_date_column, save_dataframe, _safe_remove,
     _find_col, _try_click_any, setup_driver, CSV_DIR, JSON_DIR, 
-    SAVE_FORMAT, TIMEOUT, OUTPUT_BASE_DIR
+    SAVE_FORMAT, TIMEOUT, OUTPUT_BASE_DIR,
+    get_random_user_agent, simulate_human_activity, random_sleep
 )
 
 def accept_cookies_grayscale(driver):
@@ -146,125 +147,122 @@ def standardize_grayscale(df):
     if mkt_col:    rename_map[mkt_col]    = "market price"
     return df.rename(columns=rename_map)
 
-def process_single_etf_grayscale(driver, etf, site_url):
-    """Main process to scrape a single Grayscale ETF."""
+def process_single_etf_grayscale(passed_driver, etf, site_url):
+    """
+    Main process to scrape a single Grayscale ETF.
+    
+    IMPORTANT: We ignore the passed driver and create a dedicated one with a matching 
+    User-Agent to bypass Vercel security checkpoints in CI.
+    """
     name = etf["name"]
     base = os.path.splitext(etf["output_filename"])[0]
     tmp_source = os.path.join(CSV_DIR, base + "_source.xlsx")
     print(f"\n[ETF] Processing {name} (Grayscale)  → output .{SAVE_FORMAT}")
     print("="*50)
 
+    # dedicated_driver initialization with human patterns
+    ua = get_random_user_agent()
+    print(f"[DEBUG] Using dedicated driver for Grayscale with UA: {ua}")
+    
+    # Auto-detect headless from environment or DISPLAY
+    headless = os.environ.get("ETF_HEADLESS", "false").lower() == "true" or os.environ.get("DISPLAY") is None
+    driver = setup_driver(headless=headless, user_agent=ua)
+    
     try:
-        # Strategy: Hit the home page first to establish a "human" session
-        base_url = "https://www.grayscale.com"
-        print(f"[DEBUG] Establishing session at: {base_url}")
-        driver.get(base_url)
-        time.sleep(random.uniform(3, 6))
+        # Step 1: Session Warming (Hit homepage first)
+        home_url = "https://www.grayscale.com"
+        print(f"[DEBUG] Warming up session at: {home_url}")
+        driver.get(home_url)
+        random_sleep(3, 6)
+        simulate_human_activity(driver)
         
+        # Step 2: Navigate to Resources
         print(f"[DEBUG] Navigating to resources site: {site_url}")
         driver.get(site_url)
-        time.sleep(8) # Robust wait for Vercel/Cloudflare render
+        random_sleep(6, 10) # Long wait for Vercel/Cloudflare check
         
         # Check if we are stuck on security checkpoint
         if "Security Checkpoint" in driver.title:
-            print("[DEBUG] !!! Still stuck on Vercel Security Checkpoint. Trying a refresh...")
+            print("[DEBUG] !!! Still stuck on Vercel Security Checkpoint. Trying a refresh + human activity...")
+            simulate_human_activity(driver)
             driver.refresh()
-            time.sleep(10)
+            random_sleep(10, 15)
 
         accept_cookies_grayscale(driver)
-        polite_sleep()
+        random_sleep(1, 3)
         
         # Diagnostic: Screen after cookies
-        shot_path = os.path.join(OUTPUT_BASE_DIR, "debug_grayscale_after_cookies.png")
+        shot_path = os.path.join(OUTPUT_BASE_DIR, f"debug_grayscale_{base}_after_cookies.png")
         driver.save_screenshot(shot_path)
         print(f"[DEBUG] Screenshot taken after cookies: {shot_path}")
-    except Exception as e:
-        print(f"[DEBUG] Navigation/Cookie error: {e}")
 
-    from_row = find_etf_row_grayscale(driver, etf)
-    if not from_row:
-        msg = "ETF not found in table."
-        print(f"[ERROR] {msg}")
-        return False, msg
-    link, href = find_xlsx_link_in_row(driver, from_row)
-    if not link or not href:
-        msg = "XLSX link not found in row."
-        print(f"[ERROR] {msg}")
-        return False, msg
-    if not href.startswith("http"):
-        href = urljoin(site_url, href)
+        from_row = find_etf_row_grayscale(driver, etf)
+        if not from_row:
+            msg = "ETF not found in table."
+            print(f"[ERROR] {msg}")
+            return False, msg
+        
+        link, href = find_xlsx_link_in_row(driver, from_row)
+        if not link or not href:
+            msg = "XLSX link not found in row."
+            print(f"[ERROR] {msg}")
+            return False, msg
+        
+        if not href.startswith("http"):
+            href = urljoin(site_url, href)
 
-    try:
         session = _session_from_driver(driver)
+        # Update session User-Agent to match driver for consistency
+        session.headers.update({"User-Agent": ua})
+        
         ok = download_url_to_file(
             href, site_url, tmp_source,
             accept="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,*/*",
             session=session
         )
         if not ok:
-            raise RuntimeError("Direct download session failed")
-        print(f"[DOWNLOAD] Grayscale → {tmp_source}")
-    except Exception as e:
-        print(f"[DOWNLOAD] Direct download failed ({e}), attempting Selenium click…")
-        driver.execute_script("arguments[0].scrollIntoView({block:'center'});", link)
-        polite_sleep()
-        try: link.click()
-        except: driver.execute_script("arguments[0].click();", link)
-        start = time.time()
-        tmp_source_dl = None
-        while time.time() - start < TIMEOUT:
-            files = [f for f in os.listdir(os.path.abspath(CSV_DIR)) if not f.endswith(".crdownload")]
-            if files:
-                newest = max(files, key=lambda f: os.path.getctime(os.path.join(os.path.abspath(CSV_DIR), f)))
-                pth = os.path.join(os.path.abspath(CSV_DIR), newest)
-                if os.path.getsize(pth) > 0:
-                    tmp_source_dl = pth; break
-            time.sleep(1)
-        if not tmp_source_dl:
-            msg = "Could not download from Grayscale."
-            print(f"[ERROR] {msg}")
-            return False, msg
-        tmp_source = tmp_source_dl
+            # Attempt Selenium click if direct download failed
+            print(f"[DOWNLOAD] Direct download session failed, attempting Selenium click…")
+            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", link)
+            random_sleep(1, 2)
+            try: link.click()
+            except: driver.execute_script("arguments[0].click();", link)
+            
+            # Wait for file to appear in download dir
+            start = time.time()
+            tmp_source_dl = None
+            while time.time() - start < 30: # 30s timeout
+                files = [f for f in os.listdir(os.path.abspath(CSV_DIR)) if not f.endswith(".crdownload")]
+                if files:
+                    newest = max(files, key=lambda f: os.path.getctime(os.path.join(os.path.abspath(CSV_DIR), f)))
+                    pth = os.path.join(os.path.abspath(CSV_DIR), newest)
+                    if os.path.getsize(pth) > 0:
+                        tmp_source_dl = pth; break
+                time.sleep(1)
+            
+            if not tmp_source_dl:
+                return False, "Failed to download XLSX file via click."
+            tmp_source = tmp_source_dl
 
-    cfg = etf.get("process_config", {})
-    try:
-        with pd.ExcelFile(tmp_source, engine="openpyxl") as xls:
-            sheets = xls.sheet_names
-            idx = cfg.get("sheet_to_keep", 0);  idx = idx if idx < len(sheets) else 0
-            sheet = sheets[idx]
-            df = pd.read_excel(xls, sheet_name=sheet)
-
-        keep = cfg.get("columns_to_keep") or []
-        drop = cfg.get("columns_to_remove") or []
-        if keep:
-            sel = []
-            for t in keep:
-                if t in df.columns: sel.append(t)
-                else:
-                    low = t.lower()
-                    sim = next((c for c in df.columns if low in str(c).lower() or str(c).lower() in low), None)
-                    if sim: sel.append(sim)
-            df_out = df[sel] if sel else df
-        else:
-            df_out = df
-        if drop:
-            to_drop = [c for c in df_out.columns if any(p.lower() in str(c).lower() for p in drop)]
-            if to_drop:
-                df_out = df_out.drop(columns=to_drop)
-
-        df_out = standardize_grayscale(df_out)
-        df_out = normalize_date_column(df_out)
-
-        save_dataframe(df_out, base, sheet_name="Historical")
-        _safe_remove(tmp_source)
-
+        df = pd.read_excel(tmp_source)
+        df = standardize_grayscale(df)
+        df = normalize_date_column(df)
+        
+        save_dataframe(df, base, sheet_name="Historical")
         print(f"[SUCCESS] ✓ Grayscale processed ({name})")
         return True, None
+
     except Exception as e:
         msg = f"Grayscale processing error: {e}"
         print(f"[ERROR] {msg}")
-        _safe_remove(tmp_source)
         return False, msg
+    finally:
+        if driver:
+            try:
+                driver.quit()
+                print("[DEBUG] Dedicated grayscale driver closed.")
+            except: pass
+        _safe_remove(tmp_source)
 
 def main():
     """Standalone execution for Grayscale scraper."""

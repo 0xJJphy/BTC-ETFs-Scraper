@@ -18,6 +18,52 @@ from urllib.parse import urljoin, urlparse, urlencode, quote
 from openpyxl import load_workbook
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
+
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 Edge/123.0.0.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0",
+]
+
+def get_random_user_agent():
+    """Returns a random modern User-Agent string."""
+    return random.choice(USER_AGENTS)
+
+def simulate_human_activity(driver):
+    """
+    Simulates human-like activity on the page to bypass basic anti-bot detections.
+    Performs small mouse movements and small random scrolls.
+    """
+    try:
+        from selenium.webdriver.common.action_chains import ActionChains
+        # 1. Random mouse movements
+        actions = ActionChains(driver)
+        for _ in range(3):
+            try:
+                x = random.randint(-50, 50)
+                y = random.randint(-50, 50)
+                actions.move_by_offset(x, y).pause(random.uniform(0.1, 0.3))
+            except: pass
+        actions.perform()
+        
+        # 2. Small random scrolls
+        for _ in range(2):
+            scroll_y = random.randint(100, 300)
+            driver.execute_script(f"window.scrollBy(0, {scroll_y});")
+            time.sleep(random.uniform(0.5, 1.2))
+            
+        # Scroll back a bit
+        driver.execute_script(f"window.scrollBy(0, -{random.randint(50, 150)});")
+    except Exception as e:
+        print(f"[DRIVER] Note: simulate_human_activity had an issue: {e}")
+
+def random_sleep(min_s=1.0, max_s=3.0):
+    """Sleeps for a random duration within the specified range."""
+    time.sleep(random.uniform(min_s, max_s))
 from selenium.webdriver.support import expected_conditions as EC
 import yfinance as yf
 import subprocess
@@ -146,7 +192,7 @@ def browser_fetch_text(driver, url, accept="application/json, text/plain, */*"):
 
 # ======================== DRIVER SETUP ========================
 
-def setup_driver(headless=None):
+def setup_driver(headless=None, user_agent=None):
     """
     Inicializa el WebDriver con la mejor estrategia disponible:
     1. undetected-chromedriver (si está disponible)
@@ -170,13 +216,13 @@ def setup_driver(headless=None):
     
     # Intentar undetected-chromedriver primero
     if DRIVER_MODE == "undetected":
-        driver = _setup_undetected_driver(headless)
+        driver = _setup_undetected_driver(headless, user_agent=user_agent)
         if driver:
             return driver
         print("[DRIVER] undetected-chromedriver falló, usando Selenium estándar")
     
     # Fallback a Selenium estándar
-    return _setup_standard_driver(headless)
+    return _setup_standard_driver(headless, user_agent=user_agent)
 
 
 def _get_chrome_major_version():
@@ -225,7 +271,7 @@ def _get_chrome_major_version():
     return None
 
 
-def _setup_undetected_driver(headless: bool):
+def _setup_undetected_driver(headless: bool, user_agent: str = None):
     """Configura undetected-chromedriver"""
     try:
         import undetected_chromedriver as uc
@@ -243,6 +289,9 @@ def _setup_undetected_driver(headless: bool):
         options.add_argument("--disable-gpu")
         options.add_argument("--disable-extensions")
         options.add_argument("--disable-infobars")
+        
+        if user_agent:
+            options.add_argument(f"--user-agent={user_agent}")
         
         # Configurar directorio de descargas
         prefs = {
@@ -279,7 +328,7 @@ def _setup_undetected_driver(headless: bool):
         return None
 
 
-def _setup_standard_driver(headless: bool):
+def _setup_standard_driver(headless: bool, user_agent: str = None):
     """Configura Selenium estándar con patches anti-detección"""
     from selenium import webdriver
     from selenium.webdriver.chrome.options import Options
@@ -302,10 +351,12 @@ def _setup_standard_driver(headless: bool):
     opts.add_argument("--disable-infobars")
     
     # User agent
-    opts.add_argument(
-        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
-    )
+    if not user_agent:
+        user_agent = (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+        )
+    opts.add_argument(f"user-agent={user_agent}")
     
     if headless:
         opts.add_argument("--headless=new")
@@ -333,10 +384,7 @@ def _setup_standard_driver(headless: bool):
     
     try:
         driver.execute_cdp_cmd('Network.setUserAgentOverride', {
-            "userAgent": (
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-                'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
-            )
+            "userAgent": user_agent
         })
     except Exception:
         pass  # CDP no disponible en algunas versiones
