@@ -72,7 +72,7 @@ def parse_vaneck_hodl_xlsx_to_df(xlsx_path):
     df = df.rename(columns={date_col:"date", nav_col:"nav", last_col:"market price"})
 
     raw_date = df["date"].astype(str).str.strip()
-    dt = pd.to_datetime(raw_date, errors="coerce", infer_datetime_format=True)
+    dt = pd.to_datetime(raw_date, errors="coerce")
     df["date"] = dt.dt.strftime("%Y%m%d").where(~dt.isna(), raw_date)
 
     for c in ["nav", "market price"]:

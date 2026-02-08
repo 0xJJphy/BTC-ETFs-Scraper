@@ -76,7 +76,7 @@ def parse_franklin_xlsx_to_df(xlsx_path):
     raw_date = df["date"].astype(str).str.strip()
     dt = pd.to_datetime(raw_date, format="%m/%d/%Y", errors="coerce")
     if dt.isna().any():
-        dt2 = pd.to_datetime(raw_date[dt.isna()], errors="coerce", infer_datetime_format=True)
+        dt2 = pd.to_datetime(raw_date[dt.isna()], errors="coerce")
         dt = dt.where(~dt.isna(), dt2)
     df["date"] = dt.dt.strftime("%Y%m%d").where(~dt.isna(), raw_date)
 

@@ -202,7 +202,7 @@ def parse_bosera_usd_counter(xlsx_path: str) -> pd.DataFrame:
     
     # Normalize dates
     raw_date = out["date"].astype(str).str.strip()
-    dt = pd.to_datetime(raw_date, errors="coerce", infer_datetime_format=True)
+    dt = pd.to_datetime(raw_date, errors="coerce")
     out["date"] = dt.dt.strftime("%Y%m%d").where(~dt.isna(), raw_date)
     
     # Clean numeric columns

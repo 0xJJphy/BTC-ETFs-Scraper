@@ -50,6 +50,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     unzip \
     procps \
+    dos2unix \
     && rm -rf /var/lib/apt/lists/*
 
 # Instalar Google Chrome estable
@@ -79,7 +80,7 @@ COPY --chown=scraper:scraper . .
 
 # Script de entrada que inicia Xvfb
 COPY --chown=scraper:scraper docker-entrypoint.sh /docker-entrypoint.sh
-RUN chmod +x /docker-entrypoint.sh
+RUN dos2unix /docker-entrypoint.sh && chmod +x /docker-entrypoint.sh
 
 USER scraper
 

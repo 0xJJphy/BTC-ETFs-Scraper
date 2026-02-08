@@ -704,11 +704,33 @@ def run():
     df = add_missing_calendar_days(df)
     print("\n[STEP 2] Calculating holdings...")
     df = calculate_holdings_cumsum_with_seeds(df)
-    print("\n[STEP 3] Fetching BTC price history (incremental window)...")
-    fetch_start = recalc_from - timedelta(days=7) # Safety margin for baseline
+    print("\n[STEP 3] Fetching BTC price history check...")
+    # Smart check: Do we have full history in DB?
+    fetch_start = None
+    if not existing_df.empty and "CLOSE-BTC-CB" in existing_df.columns:
+        # Check coverage
+        min_db = pd.to_datetime(existing_df["date"]).min().date()
+        min_req = pd.to_datetime(flows_df["date"]).min().date()
+        # If DB starts roughly when flows start (within 7 days margin), we assume we have history
+        if min_db <= (min_req + timedelta(days=7)):
+            fetch_start = recalc_from - timedelta(days=7)
+            print(f"[BUILD] DB has history (starts {min_db}), doing incremental BTC fetch from {fetch_start}")
+        else:
+            print(f"[BUILD] DB missing history (starts {min_db} vs req {min_req}). Fetching FULL BTC history.")
+    else:
+        print("[BUILD] No existing DB data. Fetching FULL BTC history.")
+
     df = add_btc_close_coinbase(df, limit_from=fetch_start)
     print("\n[STEP 4] Fetching ETF market data (incremental window)...")
-    df = add_etf_yf_close_volume(df, limit_from=fetch_start)
+    # Apply same logic for ETF prices if needed, or keep incremental for now to save time
+    # User specifically asked for BTC, but safe to sync ETF prices too if we are doing a full rebuild
+    etf_fetch_start = fetch_start if fetch_start is not None else (recalc_from - timedelta(days=7))
+    if fetch_start is None: 
+         # If doing full BTC fetch, let's verify if we want full ETF fetch. 
+         # Usually Safer to fetch full if DB is empty.
+         etf_fetch_start = None 
+
+    df = add_etf_yf_close_volume(df, limit_from=etf_fetch_start)
 
     # Merge with existing data (preserve old NAV/shares, use new for recent days)
     # IMPORTANT: Do this BEFORE NAV estimation so we have a baseline for "prev_data"

@@ -13,8 +13,6 @@
 #
 # ============================================================
 
-version: '3.8'
-
 services:
   scraper:
     build:
@@ -22,6 +20,9 @@ services:
       dockerfile: Dockerfile
     image: btc-etf-scraper:latest
     container_name: btc-etf-scraper
+
+    env_file:
+      - .env
 
     environment:
       - DISPLAY=:99
@@ -38,6 +39,7 @@ services:
     volumes:
       # Persistir datos entre ejecuciones
       - ./etfs_data:/app/etfs_data
+      - ./:/app
 
     # Compartir memoria para Chrome
     shm_size: '2gb'

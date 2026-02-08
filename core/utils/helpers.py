@@ -547,7 +547,7 @@ def normalize_date_column(df):
     if not target:
         return df
     try:
-        dt = pd.to_datetime(df[target], errors="coerce", infer_datetime_format=True)
+        dt = pd.to_datetime(df[target], errors="coerce")
         df[target] = dt.dt.strftime("%Y%m%d").where(~dt.isna(), df[target])
     except Exception:
         pass
