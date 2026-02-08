@@ -713,8 +713,19 @@ def run():
         min_req = pd.to_datetime(flows_df["date"]).min().date()
         # If DB starts roughly when flows start (within 7 days margin), we assume we have history
         if min_db <= (min_req + timedelta(days=7)):
-            fetch_start = recalc_from - timedelta(days=7)
-            print(f"[BUILD] DB has history (starts {min_db}), doing incremental BTC fetch from {fetch_start}")
+            # We have the historical start. Now check the end to prevent gaps.
+            # We want to refresh at least the last 14 days (recalc window),
+            # BUT if the DB stopped updating 2 months ago, we must fetch from there.
+            max_db = pd.to_datetime(existing_df["date"]).max().date()
+            
+            # Default incremental window: last ~14 days
+            incremental_start = recalc_from - timedelta(days=7)
+            
+            # If DB stopped before the incremental window, start from the DB end.
+            # (Use min to pick the older date -> wider range)
+            fetch_start = min(incremental_start, max_db)
+            
+            print(f"[BUILD] DB has history (starts {min_db}, ends {max_db}). Incremental fetch from {fetch_start}")
         else:
             print(f"[BUILD] DB missing history (starts {min_db} vs req {min_req}). Fetching FULL BTC history.")
     else:
