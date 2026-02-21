@@ -157,8 +157,31 @@ def process_single_etf_grayscale(passed_driver, etf, site_url):
     name = etf["name"]
     base = os.path.splitext(etf["output_filename"])[0]
     tmp_source = os.path.join(CSV_DIR, base + "_source.xlsx")
-    print(f"\n[ETF] Processing {name} (Grayscale)  → output .{SAVE_FORMAT}")
+    print(f"\n[ETF] Processing {name} (Grayscale)  -> output .{SAVE_FORMAT}")
     print("="*50)
+
+    # Strategy: Try direct download first if URL is provided (bypasses Vercel/Cloudflare)
+    direct_url = etf.get("direct_url")
+    if direct_url:
+        print(f"[DEBUG] Attempting direct S3 download: {direct_url}")
+        ok = download_url_to_file(
+            direct_url, site_url, tmp_source,
+            accept="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,*/*"
+        )
+        if ok:
+            try:
+                df = pd.read_excel(tmp_source)
+                df = standardize_grayscale(df)
+                df = normalize_date_column(df)
+                save_dataframe(df, base, sheet_name="Historical")
+                print(f"[SUCCESS] [OK] Grayscale processed ({name}) via direct link")
+                _safe_remove(tmp_source)
+                return True, None
+            except Exception as e:
+                print(f"[WARNING] Direct S3 parsing failed: {e}. Falling back to browser…")
+                _safe_remove(tmp_source)
+        else:
+            print(f"[DEBUG] Direct download failed. Falling back to browser…")
 
     # dedicated_driver initialization with human patterns
     ua = get_random_user_agent()
@@ -249,7 +272,7 @@ def process_single_etf_grayscale(passed_driver, etf, site_url):
         df = normalize_date_column(df)
         
         save_dataframe(df, base, sheet_name="Historical")
-        print(f"[SUCCESS] ✓ Grayscale processed ({name})")
+        print(f"[SUCCESS] [OK] Grayscale processed ({name})")
         return True, None
 
     except Exception as e:
@@ -270,6 +293,7 @@ def main():
         "name": "Grayscale Bitcoin Trust ETF",
         "search_terms": ["Bitcoin Trust ETF","GBTC","Bitcoin Trust"],
         "output_filename": "gbtc_dailynav.xlsx",
+        "direct_url": "https://reporting-prod-20231113144948145500000003.s3.us-east-1.amazonaws.com/product-performance/672e88c7-dac6-4fcd-9069-18eef01a2c73-33.xlsx",
         "process_config": {"sheet_to_keep": 0, "columns_to_keep": ["OTC Ticker","Date","Shares Outstanding","NAV Per Share","Market Price Per Share"]}
     }
     site_url = "https://www.grayscale.com/resources"

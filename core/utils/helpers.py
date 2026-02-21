@@ -329,7 +329,7 @@ def _setup_undetected_driver(headless: bool, user_agent: str = None):
         driver.set_page_load_timeout(60)
         driver.implicitly_wait(10)
         
-        print(f"[DRIVER] ✅ undetected-chromedriver iniciado (headless={headless})")
+        print(f"[DRIVER] [OK] undetected-chromedriver iniciado (headless={headless})")
         return driver
         
     except Exception as e:
@@ -402,7 +402,7 @@ def _setup_standard_driver(headless: bool, user_agent: str = None):
     driver.set_page_load_timeout(60)
     driver.implicitly_wait(10)
     
-    print(f"[DRIVER] ✅ Selenium estándar iniciado (headless={headless})")
+    print(f"[DRIVER] [OK] Selenium estándar iniciado (headless={headless})")
     return driver
 
 
@@ -621,7 +621,7 @@ def save_dataframe(df, base_name, sheet_name="Historical"):
         if is_db_enabled():
             count = save_etf_dataframe(df, base_name)
             if count > 0:
-                print(f"[DB] ✅ Saved {count} rows for {base_name}")
+                print(f"[DB] [OK] Saved {count} rows for {base_name}")
     except ImportError:
         pass  # db_adapter not available, continue with file saving
     except Exception as e:

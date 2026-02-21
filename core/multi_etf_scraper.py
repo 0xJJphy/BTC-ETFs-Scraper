@@ -51,12 +51,14 @@ SITES_CONFIG = [
                 "name": "Grayscale Bitcoin Mini Trust ETF",
                 "search_terms": ["Bitcoin Mini Trust", "BTC", "Mini"],
                 "output_filename": "btc_dailynav.xlsx",
+                "direct_url": "https://reporting-prod-20231113144948145500000003.s3.amazonaws.com/product-performance/9ba286d6-3067-4153-b430-81d9d7a25696.xlsx",
                 "process_config": {"sheet_to_keep": 0, "columns_to_keep": ["OTC Ticker","Date","Shares Outstanding","NAV Per Share","Market Price Per Share"]}
             },
             {
                 "name": "Grayscale Bitcoin Trust ETF",
                 "search_terms": ["Bitcoin Trust ETF","GBTC","Bitcoin Trust"],
                 "output_filename": "gbtc_dailynav.xlsx",
+                "direct_url": "https://reporting-prod-20231113144948145500000003.s3.us-east-1.amazonaws.com/product-performance/672e88c7-dac6-4fcd-9069-18eef01a2c73-33.xlsx",
                 "process_config": {"sheet_to_keep": 0, "columns_to_keep": ["OTC Ticker","Date","Shares Outstanding","NAV Per Share","Market Price Per Share"]}
             }
         ]
@@ -228,11 +230,11 @@ def print_final_summary(all_results):
             total_etfs += 1
             if ok:
                 success_count += 1
-                status = "✓ SUCCESS"
+                status = "[OK]   "
             else:
-                status = "✗ FAILED "
+                status = "[FAIL] "
                 failures.append((etf_name, err))
-            print(f"[{status}] {etf_name}")
+            print(f"{status} {etf_name}")
 
     print("-" * 60)
     print(f"Overall Progress: {success_count}/{total_etfs} ETFs successfully processed.")
