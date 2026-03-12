@@ -6,7 +6,7 @@
 set -e
 
 # Project directory
-PROJECT_DIR="/opy/jjphy/BTC-ETFs-Scraper"
+PROJECT_DIR="/opt/jjphy/BTC-ETFs-Scraper"
 
 echo "=================================================="
 echo "🚀 Starting BTC ETF Scraper at $(date)"
