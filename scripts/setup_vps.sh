@@ -5,8 +5,8 @@
 
 set -e
 
-# Detect current project path
-REAL_PATH="$(pwd)"
+# Detect current project path (always points to the parent directory of this script)
+REAL_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 USER_NAME="$(whoami)"
 
 echo "=================================================="
