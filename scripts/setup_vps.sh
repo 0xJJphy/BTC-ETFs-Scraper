@@ -56,8 +56,12 @@ Persistent=true
 WantedBy=timers.target
 EOF
 
-# Set permissions
+# Set permissions and clean CRLF (Windows line endings)
+echo "🧹 Cleaning line endings and setting permissions..."
+sed -i 's/\r$//' "$REAL_PATH/scripts/vps_run.sh"
+sed -i 's/\r$//' "$REAL_PATH/scripts/setup_vps.sh"
 chmod +x "$REAL_PATH/scripts/vps_run.sh"
+chmod +x "$REAL_PATH/scripts/setup_vps.sh"
 
 # Reload systemd
 echo "🔄 Reloading systemd daemon..."
