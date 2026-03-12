@@ -18,6 +18,11 @@ echo "=================================================="
 
 cd "$PROJECT_DIR"
 
+# Ensure output directories exist and have correct permissions (matching GHA)
+echo "🗂️ Preparing output directories..."
+mkdir -p ./etfs_data/csv ./etfs_data/json ./etfs_data/etfs_completo
+chmod -R 777 ./etfs_data
+
 # Build/update the image if needed (ensures latest code)
 echo "🔨 Building/Updating Docker image (using $DOCKER_BIN)..."
 $DOCKER_BIN compose build
