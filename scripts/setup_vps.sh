@@ -7,7 +7,9 @@ set -e
 
 # Detect current project path (always points to the parent directory of this script)
 REAL_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-USER_NAME="$(whoami)"
+
+# Detect the correct user (owner of the project directory)
+USER_NAME="$(stat -c '%U' "$REAL_PATH")"
 
 echo "=================================================="
 echo "🔧 Configuring BTC ETF Scraper for this VPS"
