@@ -34,8 +34,7 @@ Type=oneshot
 User=$USER_NAME
 WorkingDirectory=$REAL_PATH
 ExecStart=/bin/bash $REAL_PATH/scripts/vps_run.sh
-StandardOutput=append:$REAL_PATH/scraper.log
-StandardError=append:$REAL_PATH/scraper.log
+# StandardOutput/Error se enviarán automáticamente al Journal de systemd
 
 [Install]
 WantedBy=multi-user.target
