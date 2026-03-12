@@ -40,18 +40,36 @@ echo "   - ETF_SAVE_FORMAT: ${ETF_SAVE_FORMAT:-csv}"
 echo "   - ETF_DRIVER_MODE: ${ETF_DRIVER_MODE:-undetected}"
 echo ""
 
+# Capture Start Time
+START_TIME=$(date +%s)
+bash "/app/notify_vps.sh" START "btc-etf-scraper"
+
 echo "🚀 Ejecutando: $@"
 echo "=================================================="
 echo ""
 
-# Manejar señales para cleanup limpio
-cleanup() {
-    echo ""
-    echo "🛑 Señal recibida, limpiando..."
-    kill $XVFB_PID 2>/dev/null || true
-    exit 0
-}
-trap cleanup SIGTERM SIGINT
+# Ejecutar el comando pasado (sin exec para capturar el código de salida)
+"$@"
+EXIT_CODE=$?
 
-# Ejecutar el comando pasado
-exec "$@"
+# Capture End Time and Calculate Duration
+END_TIME=$(date +%s)
+DURATION_SEC=$((END_TIME - START_TIME))
+DURATION_HUMAN=$(printf '%dh %dm %ds\n' $((DURATION_SEC/3600)) $((DURATION_SEC%3600/60)) $((DURATION_SEC%60)))
+
+echo ""
+echo "=================================================="
+echo "🏁 Finalizado (Código: $EXIT_CODE, Duración: $DURATION_HUMAN)"
+echo "=================================================="
+
+if [ $EXIT_CODE -eq 0 ]; then
+    bash "/app/notify_vps.sh" SUCCESS "btc-etf-scraper" "$DURATION_HUMAN"
+else
+    bash "/app/notify_vps.sh" FAILURE "btc-etf-scraper"
+fi
+
+# Cleanup
+echo "🛑 Limpiando procesos..."
+kill $XVFB_PID 2>/dev/null || true
+
+exit $EXIT_CODE
