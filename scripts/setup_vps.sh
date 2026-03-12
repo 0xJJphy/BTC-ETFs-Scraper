@@ -17,6 +17,10 @@ echo "Project Path: $REAL_PATH"
 echo "User: $USER_NAME"
 echo "=================================================="
 
+# Fix ownership if some folders were created as root previously
+echo "🔑 Ensuring project ownership for $USER_NAME..."
+sudo chown -R "$USER_NAME:$USER_NAME" "$REAL_PATH"
+
 # Create local systemd service from template or direct write
 # We do this locally so the absolute path is NOT in the repo
 SERVICE_FILE="/etc/systemd/system/btc-etf-scraper.service"
