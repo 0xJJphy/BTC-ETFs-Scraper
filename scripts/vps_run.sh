@@ -5,8 +5,8 @@
 
 set -e
 
-# Project directory
-PROJECT_DIR="/opt/jjphy/BTC-ETFs-Scraper"
+# Project directory (automatically detects path relative to script)
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 echo "=================================================="
 echo "🚀 Starting BTC ETF Scraper at $(date)"
