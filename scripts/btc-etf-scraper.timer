@@ -1,0 +1,13 @@
+[Unit]
+Description=Daily BTC ETF Scraper Timer
+Wants=btc-etf-scraper.service
+
+[Timer]
+# Ejecutar diariamente a las 06:00 UTC
+# Esto coincide con el cron: '0 6 * * *' de GitHub Actions
+OnCalendar=*-*-* 06:00:00 UTC
+RandomizedDelaySec=5m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

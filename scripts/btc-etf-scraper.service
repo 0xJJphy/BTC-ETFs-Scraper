@@ -1,0 +1,15 @@
+[Unit]
+Description=BTC ETF Scraper Service
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=jjphy
+WorkingDirectory=/opy/jjphy/BTC-ETFs-Scraper
+ExecStart=/bin/bash /opy/jjphy/BTC-ETFs-Scraper/scripts/vps_run.sh
+StandardOutput=append:/opy/jjphy/BTC-ETFs-Scraper/scraper.log
+StandardError=append:/opy/jjphy/BTC-ETFs-Scraper/scraper.log
+
+[Install]
+WantedBy=multi-user.target

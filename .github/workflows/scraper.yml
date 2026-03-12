@@ -5,10 +5,10 @@
 
 name: BTC ETF Scraper
 
-on:
-  # Ejecutar diariamente a las 6:00 UTC (después cierre US, antes apertura HK)
-  schedule:
-    - cron: '0 6 * * *'
+# on:
+#   # Ejecutar diariamente a las 6:00 UTC (después cierre US, antes apertura HK)
+#   schedule:
+#     - cron: '0 6 * * *'
   
   # Permitir ejecución manual desde GitHub UI
   workflow_dispatch:
