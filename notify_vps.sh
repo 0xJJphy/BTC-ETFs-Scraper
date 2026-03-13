@@ -21,6 +21,14 @@ fi
 HOST=$(hostname)
 TIME=$(date "+%Y-%m-%d %H:%M:%S")
 
+# Read summary if exists
+SUMMARY=""
+if [ -f "$DIR/etfs_data/last_run_summary.txt" ]; then
+    SUMMARY=$(cat "$DIR/etfs_data/last_run_summary.txt")
+    # Clean up for next run
+    rm "$DIR/etfs_data/last_run_summary.txt"
+fi
+
 case $EVENT_TYPE in
     START)
         MESSAGE="🚀 *BTC-ETF-Scraper ha empezado a ejecutarse*
@@ -29,6 +37,7 @@ case $EVENT_TYPE in
         ;;
     SUCCESS)
         MESSAGE="✅ *BTC-ETF-Scraper ha terminado correctamente*
+*Resumen:* ${SUMMARY:-"Sin detalles"}
 *Duración:* $DURATION
 *Host:* $HOST
 *Hora:* $TIME"
@@ -45,6 +54,7 @@ case $EVENT_TYPE in
         fi
 
         MESSAGE="⚠️ *BTC-ETF-Scraper ha FALLADO* ⚠️
+*Resumen:* ${SUMMARY:-"Error crítico antes del scraping"}
 *Unit:* $UNIT
 *Host:* $HOST
 *Hora:* $TIME

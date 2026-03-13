@@ -79,7 +79,24 @@ def main():
 
     # Step 1: Individual ETF Scrapers (Grayscale, iShares, Fidelity, etc.)
     if run_all or args.sites:
-        if not run_step("Individual Site Scrapers", run_multi_scraper, headless=args.headless):
+        success, result_data = run_multi_scraper(headless=args.headless)
+        
+        # Capture summary for notifications
+        if success and isinstance(result_data, tuple):
+            total, oks, fails = result_data
+            summary_path = "etfs_data/last_run_summary.txt"
+            try:
+                with open(summary_path, "w", encoding="utf-8") as f:
+                    summary_msg = f"📊 {oks}/{total} OK"
+                    if fails:
+                        fail_names = ", ".join([f[0].split(" (")[0] for f in fails[:3]])
+                        summary_msg += f" - Fallos: {fail_names}"
+                        if len(fails) > 3: summary_msg += "..."
+                    f.write(summary_msg)
+            except Exception as e:
+                print(f"[ERROR] Could not write summary file: {e}")
+            
+        if not success:
             etfs_failed += 1
             pipeline_success = False
         else:

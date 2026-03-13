@@ -246,6 +246,8 @@ def print_final_summary(all_results):
     else:
         print("\nAll scrapers completed successfully!")
     print("="*60 + "\n")
+    
+    return total_etfs, success_count, failures
 
 def run(headless=True, save_format=None):
     """Execution logic for multi-ETF scraping."""
@@ -271,11 +273,11 @@ def run(headless=True, save_format=None):
                     except: pass
                     
         final_directory_cleanup()
-        print_final_summary(all_results)
-        return True
+        total, success, failures = print_final_summary(all_results)
+        return True, (total, success, failures)
     except Exception as e:
         print(f"[CRITICAL] Multi-scraper execution failed: {e}")
-        return False
+        return False, str(e)
 
 def main():
     """CLI entry point for multi-ETF scraping."""
