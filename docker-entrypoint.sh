@@ -10,7 +10,7 @@ echo "  BTC ETF Scraper - Docker Container"
 echo "=================================================="
 echo ""
 
-# Limpiar display anterior si existe
+# Limpiar display anterior si existe (silenciar errores si no tenemos permiso)
 rm -f /tmp/.X99-lock 2>/dev/null || true
 
 echo "🖥️  Iniciando Xvfb en display :99..."

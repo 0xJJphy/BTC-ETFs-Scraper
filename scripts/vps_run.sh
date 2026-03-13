@@ -11,17 +11,25 @@ DOCKER_BIN=$(which docker || echo "/usr/bin/docker")
 
 # Project directory (automatically detects path relative to script)
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$PROJECT_DIR"
+
+# Detect the UID and GID of the project owner (should be jjphy)
+# This ensures Docker runs as the correct user even if started by pedro
+export APP_UID=$(stat -c '%u' "$PROJECT_DIR")
+export APP_GID=$(stat -c '%g' "$PROJECT_DIR")
 
 echo "=================================================="
 echo "🚀 Starting BTC ETF Scraper at $(date)"
+echo "ℹ️ Running container as host user ID: $APP_UID ($APP_GID)"
 echo "=================================================="
 
-cd "$PROJECT_DIR"
-
-# Ensure output directories exist and have correct permissions (matching GHA)
+# Ensure output directories exist
 echo "🗂️ Preparing output directories..."
 mkdir -p ./etfs_data/csv ./etfs_data/json ./etfs_data/etfs_completo
-chmod -R 777 ./etfs_data
+
+# Silent chmod - if it fails, it's usually because files are owned by root.
+# The user can fix this by running scripts/setup_vps.sh (which automates the chown).
+chmod -R 777 ./etfs_data 2>/dev/null || true
 
 # Build/update the image if needed (ensures latest code)
 echo "🔨 Building/Updating Docker image (using $DOCKER_BIN)..."

@@ -61,10 +61,11 @@ EOF
 
 # Set permissions and clean CRLF (Windows line endings)
 echo "🧹 Cleaning line endings and setting permissions..."
-sed -i 's/\r$//' "$REAL_PATH/scripts/vps_run.sh"
-sed -i 's/\r$//' "$REAL_PATH/scripts/setup_vps.sh"
-chmod +x "$REAL_PATH/scripts/vps_run.sh"
-chmod +x "$REAL_PATH/scripts/setup_vps.sh"
+find "$REAL_PATH" -name "*.sh" -exec sed -i 's/\r$//' {} +
+find "$REAL_PATH" -name "*.sh" -exec chmod +x {} +
+
+# Re-ensure ownership for everything (including files created by recent bot additions)
+sudo chown -R "$USER_NAME:$USER_NAME" "$REAL_PATH"
 
 # Reload systemd
 echo "🔄 Reloading systemd daemon..."

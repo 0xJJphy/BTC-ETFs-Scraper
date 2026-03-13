@@ -35,6 +35,11 @@ services:
       # DATABASE_URL=${DATABASE_URL:-}
       # Futuro: conexión a DB
       - DATABASE_URL=${DATABASE_URL:-}
+      # Run as host user to avoid permission issues with volumes
+      - APP_UID=${APP_UID:-1000}
+      - APP_GID=${APP_GID:-1000}
+
+    user: "${APP_UID:-1000}:${APP_GID:-1000}"
 
     volumes:
       # Persistir datos entre ejecuciones
