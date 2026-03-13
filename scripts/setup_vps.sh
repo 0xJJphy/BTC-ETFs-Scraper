@@ -19,6 +19,7 @@ echo "=================================================="
 
 # Fix ownership if some folders were created as root previously
 echo "🔑 Ensuring project ownership for $USER_NAME..."
+mkdir -p "$REAL_PATH/logs" "$REAL_PATH/etfs_data"
 sudo chown -R "$USER_NAME:$USER_NAME" "$REAL_PATH"
 
 # Create local systemd service from template or direct write

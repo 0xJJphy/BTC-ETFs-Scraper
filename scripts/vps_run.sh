@@ -31,18 +31,28 @@ mkdir -p ./etfs_data/csv ./etfs_data/json ./etfs_data/etfs_completo
 # The user can fix this by running scripts/setup_vps.sh (which automates the chown).
 chmod -R 777 ./etfs_data 2>/dev/null || true
 
-# Build/update the image if needed (ensures latest code)
-echo "🔨 Building/Updating Docker image (using $DOCKER_BIN)..."
-$DOCKER_BIN compose build
+# Ensure logs directory exists
+mkdir -p "$PROJECT_DIR/logs"
+LOG_FILE="$PROJECT_DIR/logs/btc-etf-scraper_$(date +%Y%m%d).log"
 
-# Run the scraper
-echo "🏃 Running scraper..."
-$DOCKER_BIN compose run --rm \
-  -e ETF_SAVE_FORMAT=csv \
-  -e ETF_DRIVER_MODE=undetected \
-  -e ETF_REQUEST_DELAY=1.5 \
-  scraper python main.py --all --save-files
+# Define the runner logic in a function to easily pipe all output
+run_scraper() {
+    # Build/update the image if needed (ensures latest code)
+    echo "🔨 Building/Updating Docker image (using $DOCKER_BIN)..."
+    $DOCKER_BIN compose build
 
-echo "=================================================="
-echo "✅ Scraping completed at $(date)"
-echo "=================================================="
+    # Run the scraper
+    echo "🏃 Running scraper..."
+    $DOCKER_BIN compose run --rm \
+      -e ETF_SAVE_FORMAT=csv \
+      -e ETF_DRIVER_MODE=undetected \
+      -e ETF_REQUEST_DELAY=1.5 \
+      scraper python main.py --all --save-files
+
+    echo "=================================================="
+    echo "✅ Scraping completed at $(date)"
+    echo "=================================================="
+}
+
+# Execute and pipe EVERYTHING to the log file AND the console/journal
+run_scraper 2>&1 | tee -a "$LOG_FILE"
