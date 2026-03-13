@@ -35,6 +35,10 @@ chmod -R 777 ./etfs_data 2>/dev/null || true
 mkdir -p "$PROJECT_DIR/logs"
 LOG_FILE="$PROJECT_DIR/logs/btc-etf-scraper_$(date +%Y%m%d).log"
 
+# Cleanup logs older than 7 days
+echo "🧹 Cleaning up logs older than 7 days..."
+find "$PROJECT_DIR/logs" -name "*.log" -mtime +7 -delete 2>/dev/null || true
+
 # Define the runner logic in a function to easily pipe all output
 run_scraper() {
     # Build/update the image if needed (ensures latest code)
