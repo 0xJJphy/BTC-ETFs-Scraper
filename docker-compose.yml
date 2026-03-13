@@ -38,6 +38,10 @@ services:
       # Run as host user to avoid permission issues with volumes
       - APP_UID=${APP_UID:-1000}
       - APP_GID=${APP_GID:-1000}
+      # Fix for non-root home directory access
+      - HOME=/tmp
+      - XDG_CONFIG_HOME=/tmp/.config
+      - XDG_CACHE_HOME=/tmp/.cache
 
     user: "${APP_UID:-1000}:${APP_GID:-1000}"
 
