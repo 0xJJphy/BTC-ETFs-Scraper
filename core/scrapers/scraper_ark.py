@@ -26,11 +26,17 @@ except ImportError:
     )
 
 def accept_cookies_ark(driver):
-    """Handles the cookie consent banner on the ARK website."""
+    """Handles the jurisdiction disclaimer gate and cookie consent banner on the ARK website."""
+    # 1. Jurisdiction/legal disclaimer gate ("You Are Entering ark-funds.com")
+    _try_click_any(driver, [
+        "//button[contains(.,'I Agree')]",
+    ], wait_sec=10)
+    polite_sleep()
+    # 2. OneTrust cookie consent banner
     return _try_click_any(driver, [
-        "//button[contains(.,'Accept All') or contains(.,'I Accept') or contains(.,'Agree')]",
+        "#onetrust-accept-btn-handler",
         "//button[@id='onetrust-accept-btn-handler']",
-        "#onetrust-accept-btn-handler"
+        "//button[contains(.,'Accept All')]",
     ], wait_sec=10)
 
 def process_single_etf_ark(driver, etf, site_url):

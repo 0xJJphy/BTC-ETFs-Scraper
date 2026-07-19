@@ -145,13 +145,20 @@ return rows;
 """
 
 def accept_cookies_chinaamc(driver):
-    """Handles the cookie consent banner on the ChinaAMC website."""
+    """Handles the Terms and Conditions gate and cookie consent banner on the ChinaAMC website."""
+    # 1. "Terms and Conditions" gate (shown on every fresh page load)
+    _try_click_any(driver, [
+        "//div[normalize-space(text())='Agree']",
+        "//button[normalize-space(text())='Agree']",
+    ], wait_sec=10)
+    polite_sleep()
+    # 2. OneTrust-style cookie consent banner (if present)
     clicked = _try_click_any(driver, [
         "#onetrust-accept-btn-handler",
         "//button[@id='onetrust-accept-btn-handler']",
         "//button[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'accept all')]",
         "//button[contains(.,'同意') or contains(.,'接受')]",
-    ], wait_sec=10)
+    ], wait_sec=5)
     if not clicked:
         try:
             # Fallback: Hide the consent banners via JS
@@ -171,6 +178,8 @@ def accept_cookies_chinaamc(driver):
 def _chinaamc_click_historical_navs(driver):
     """Attempts to click the 'Historical NAVs' tab on the page."""
     selectors = [
+        (By.XPATH, "//div[normalize-space(text())='Historical NAVs']"),
+        (By.XPATH, "//*[normalize-space(text())='Historical NAVs']"),
         (By.CSS_SELECTOR, "div.fund-tabs-content-wrapper--items [data-content*='content_nav']"),
         (By.XPATH, "//div[contains(@class,'fund-tabs-content-wrapper')]//div[contains(@class,'items-item')][contains(@data-content,'content_nav')]"),
         (By.XPATH, "//span[normalize-space()='Historical NAVs']/ancestor::div[contains(@class,'items-item')]"),
@@ -286,7 +295,7 @@ def process_single_etf_chinaamc(driver, etf, site_url):
 def main():
     """Standalone execution entry point."""
     etf = {"name": "ChinaAMC Bitcoin ETF (9042.HK)", "output_filename": "chinaamc_dailynav.xlsx"}
-    site_url = "https://www.chinaamc.com.hk/product/chinaamc-bitcoin-etf/"
+    site_url = "https://www.chinaamc.com.hk/detail?fundId=HKVAXBT&fundName=ChinaAMC-Bitcoin-ETF-(3042-HK-%2F-83042-HK-%2F-9042-HK)"
     
     driver = setup_driver(headless=False)
     try:

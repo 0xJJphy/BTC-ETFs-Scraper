@@ -123,7 +123,7 @@ SITES_CONFIG = [
     },
     {
         "name": "ChinaAMC",
-        "url": "https://www.chinaamc.com.hk/product/chinaamc-bitcoin-etf/",
+        "url": "https://www.chinaamc.com.hk/detail?fundId=HKVAXBT&fundName=ChinaAMC-Bitcoin-ETF-(3042-HK-%2F-83042-HK-%2F-9042-HK)",
         "etfs": [{"name": "ChinaAMC Bitcoin ETF (9042.HK)", "output_filename": "chinaamc_dailynav.xlsx"}]
     },
     {

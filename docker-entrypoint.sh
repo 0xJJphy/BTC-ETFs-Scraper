@@ -42,7 +42,7 @@ echo ""
 
 # Capture Start Time
 START_TIME=$(date +%s)
-bash "/app/notify_vps.sh" START "btc-etf-scraper"
+bash "/app/notify_vps.sh" START "btc-etf-scraper" || echo "⚠️  Notificación de inicio falló (ignorado)"
 
 echo "🚀 Ejecutando: $@"
 echo "=================================================="
@@ -63,9 +63,9 @@ echo "🏁 Finalizado (Código: $EXIT_CODE, Duración: $DURATION_HUMAN)"
 echo "=================================================="
 
 if [ $EXIT_CODE -eq 0 ]; then
-    bash "/app/notify_vps.sh" SUCCESS "btc-etf-scraper" "$DURATION_HUMAN"
+    bash "/app/notify_vps.sh" SUCCESS "btc-etf-scraper" "$DURATION_HUMAN" || echo "⚠️  Notificación de éxito falló (ignorado)"
 else
-    bash "/app/notify_vps.sh" FAILURE "btc-etf-scraper"
+    bash "/app/notify_vps.sh" FAILURE "btc-etf-scraper" || echo "⚠️  Notificación de fallo falló (ignorado)"
 fi
 
 # Cleanup
