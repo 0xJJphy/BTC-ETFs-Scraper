@@ -4,6 +4,7 @@ import time
 import pandas as pd
 from urllib.parse import urlparse
 import sys
+from selenium.webdriver.support.ui import WebDriverWait
 
 # Add the project root to sys.path to allow absolute imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
@@ -13,7 +14,7 @@ try:
         polite_sleep, _session_from_driver, browser_fetch_text,
         _retry_after_seconds, save_dataframe, setup_driver,
         _try_click_any, MAX_RETRIES, BACKOFF_BASE, BACKOFF_MAX,
-        SAVE_FORMAT
+        SAVE_FORMAT, OUTPUT_BASE_DIR
     )
 except ImportError:
     # Fallback for standalone execution if sys.path trick fails
@@ -22,7 +23,7 @@ except ImportError:
         polite_sleep, _session_from_driver, browser_fetch_text,
         _retry_after_seconds, save_dataframe, setup_driver,
         _try_click_any, MAX_RETRIES, BACKOFF_BASE, BACKOFF_MAX,
-        SAVE_FORMAT
+        SAVE_FORMAT, OUTPUT_BASE_DIR
     )
 
 def accept_cookies_ark(driver):
@@ -50,8 +51,21 @@ def process_single_etf_ark(driver, etf, site_url):
     try:
         driver.get(site_url); polite_sleep()
         accept_cookies_ark(driver); polite_sleep()
+        # Wait past any Cloudflare challenge interstitial ("Just a moment...") before continuing
+        try:
+            WebDriverWait(driver, 25).until(lambda d: "just a moment" not in d.title.lower())
+        except Exception:
+            print("[ARK] Warning: page still looks like a challenge/interstitial after waiting.")
     except Exception as e:
         print(f"[ARK] Navigation warning: {e}")
+
+    # Diagnostic screenshot to help debug Cloudflare/consent issues in headless runs
+    try:
+        shot_path = os.path.join(OUTPUT_BASE_DIR, "debug_ark_after_navigation.png")
+        driver.save_screenshot(shot_path)
+        print(f"[ARK] Screenshot saved: {shot_path}")
+    except Exception:
+        pass
 
     if not api_url:
         msg = "api_url not defined in config."
@@ -60,13 +74,17 @@ def process_single_etf_ark(driver, etf, site_url):
 
     data = None
 
-    # Step 1: Try fetching via browser to use existing session/stealth
-    try:
-        txt = browser_fetch_text(driver, api_url)
-        data = json.loads(txt)
-        print("[ARK] SUCCESS JSON obtained via browser")
-    except Exception as e:
-        print(f"[ARK] Browser fetch failed: {e}")
+    # Step 1: Try fetching via browser to use existing session/stealth (retry once after extra wait)
+    for attempt in range(2):
+        try:
+            txt = browser_fetch_text(driver, api_url)
+            data = json.loads(txt)
+            print("[ARK] SUCCESS JSON obtained via browser")
+            break
+        except Exception as e:
+            print(f"[ARK] Browser fetch failed (attempt {attempt+1}/2): {e}")
+            if attempt == 0:
+                time.sleep(5)
 
     # Step 2: Fallback to requests if browser fetch fails
     if data is None:
