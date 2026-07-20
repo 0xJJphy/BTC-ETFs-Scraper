@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import json
 from pathlib import Path
 import pandas as pd
 from selenium.webdriver.common.by import By
@@ -14,8 +15,10 @@ if str(root_path) not in sys.path:
 
 from core.utils.helpers import (
     polite_sleep, normalize_date_column, save_dataframe,
-    _try_click_any, setup_driver, SAVE_FORMAT, OUTPUT_BASE_DIR
+    _try_click_any, setup_driver, browser_fetch_text, SAVE_FORMAT, OUTPUT_BASE_DIR
 )
+
+BTCW_HISTORY_API_URL = "https://www.wisdomtree.com/api/fund-history/48684713?view=navHistoryModal"
 
 
 def accept_cookies_wisdomtree(driver):
@@ -56,38 +59,103 @@ def accept_cookies_wisdomtree(driver):
         pass
 
 
-def _wisdomtree_open_history_modal(driver):
-    """Open the NAV/Market Price/Premium-Discount History dialog on the WisdomTree page."""
+def _wait_for_cf_clearance(driver, timeout=20):
+    """Waits for the Cloudflare clearance cookie to appear before the page's own data fetches will succeed."""
+    start = time.time()
+    while time.time() - start < timeout:
+        try:
+            if any(c.get("name") == "cf_clearance" for c in driver.get_cookies()):
+                return True
+        except Exception:
+            pass
+        time.sleep(1)
+    return False
+
+
+def _wisdomtree_history_load_failed(driver):
+    """Detects the dialog's own 'unable to load historical data' error state."""
+    try:
+        return bool(driver.find_elements(
+            By.XPATH, "//*[contains(text(),'unable to load historical data')]"
+        ))
+    except Exception:
+        return False
+
+
+def _wisdomtree_click_history_trigger(driver):
+    """Clicks the button that opens the History dialog. Returns True if a trigger was found and clicked."""
     link_selectors = [
         "//button[normalize-space(text())='View NAV, Market Price and Premium/Discount History']",
         "//button[contains(normalize-space(.),'View NAV') and contains(normalize-space(.),'History')]",
     ]
-
-    link_found = False
     for sel in link_selectors:
         try:
             link = WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.XPATH, sel)))
             driver.execute_script("arguments[0].scrollIntoView({block:'center'});", link)
             time.sleep(0.5)
             driver.execute_script("arguments[0].click();", link)
-            link_found = True
             print(f"[WISDOMTREE] Triggered history dialog via: {sel}")
-            break
+            return True
         except Exception as ex:
             print(f"[WISDOMTREE] Selector failed: {sel} -> {ex}")
+    return False
+
+
+def _wisdomtree_open_history_modal(driver):
+    """Open the NAV/Market Price/Premium-Discount History dialog on the WisdomTree page."""
+    for attempt in range(2):
+        if not _wisdomtree_click_history_trigger(driver):
+            raise RuntimeError("WisdomTree: History dialog trigger not found.")
+
+        print("[WISDOMTREE] Waiting for history dialog to appear...")
+        WebDriverWait(driver, 20).until(
+            EC.visibility_of_element_located((By.CSS_SELECTOR, "section[role='dialog']"))
+        )
+
+        try:
+            WebDriverWait(driver, 25).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "section[role='dialog'] table tr[data-key]"))
+            )
+            print("[WISDOMTREE] Table rows detected in dialog.")
+            return
+        except Exception:
+            if attempt == 0 and _wisdomtree_history_load_failed(driver):
+                print("[WISDOMTREE] Dialog reported a load failure, closing and retrying...")
+                try:
+                    driver.find_element(By.XPATH, "//button[normalize-space(text())='Close']").click()
+                except Exception:
+                    pass
+                time.sleep(3)
+                continue
+            raise
+
+    raise RuntimeError("WisdomTree: History table did not load after retry.")
+
+
+def _wisdomtree_fetch_history_api(driver):
+    """Fetches NAV/market price history directly from WisdomTree's JSON API (reuses the browser's Cloudflare clearance)."""
+    txt = browser_fetch_text(driver, BTCW_HISTORY_API_URL)
+    data = json.loads(txt)
+    if not isinstance(data, list) or not data:
+        raise RuntimeError("WisdomTree: API returned no data")
+
+    rows = []
+    for item in data:
+        dt = item.get("dt")
+        if not dt:
             continue
+        rows.append({"date": dt, "nav": item.get("nav"), "market price": item.get("closePrice")})
 
-    if not link_found:
-        raise RuntimeError("WisdomTree: History dialog trigger not found.")
+    if not rows:
+        raise RuntimeError("WisdomTree: Could not parse any rows from API response")
 
-    print("[WISDOMTREE] Waiting for history dialog to appear...")
-    WebDriverWait(driver, 20).until(
-        EC.visibility_of_element_located((By.CSS_SELECTOR, "section[role='dialog']"))
-    )
-    WebDriverWait(driver, 25).until(
-        EC.presence_of_element_located((By.CSS_SELECTOR, "section[role='dialog'] table tr[data-key]"))
-    )
-    print("[WISDOMTREE] Table rows detected in dialog.")
+    df = pd.DataFrame(rows)
+    df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.strftime("%Y%m%d")
+    for c in ["nav", "market price"]:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+
+    print(f"[WISDOMTREE] Parsed {len(df)} rows from direct API fetch")
+    return df[["date", "nav", "market price"]]
 
 
 def _wisdomtree_parse_table(driver):
@@ -148,15 +216,27 @@ def process_single_etf_wisdomtree(driver, etf, site_url):
         
         accept_cookies_wisdomtree(dedicated_driver)
         polite_sleep()
-        
+
+        got_clearance = _wait_for_cf_clearance(dedicated_driver, timeout=20)
+        print(f"[WISDOMTREE] Cloudflare clearance cookie present: {got_clearance}")
+
         # Diagnostic: Screen after cookies
         shot_path = os.path.join(OUTPUT_BASE_DIR, "debug_wisdomtree_after_cookies.png")
         dedicated_driver.save_screenshot(shot_path)
         print(f"[WISDOMTREE] Screenshot after cookies: {shot_path}")
-        
-        _wisdomtree_open_history_modal(dedicated_driver)
-        df = _wisdomtree_parse_table(dedicated_driver)
-        
+
+        # Step 1: Try the JSON API directly (reuses the browser's Cloudflare clearance cookie)
+        df = None
+        try:
+            df = _wisdomtree_fetch_history_api(dedicated_driver)
+        except Exception as e:
+            print(f"[WISDOMTREE] Direct API fetch failed: {e} -> falling back to modal parsing")
+
+        # Step 2: Fall back to opening the history dialog and parsing its table
+        if df is None:
+            _wisdomtree_open_history_modal(dedicated_driver)
+            df = _wisdomtree_parse_table(dedicated_driver)
+
         save_dataframe(df, base, sheet_name="Historical")
         print(f"[SUCCESS] ✓ WisdomTree processed ({name})")
         return True, None
