@@ -15,7 +15,7 @@ if str(root_path) not in sys.path:
 
 from core.utils.helpers import (
     polite_sleep, normalize_date_column, save_dataframe,
-    _try_click_any, setup_driver, browser_fetch_text, SAVE_FORMAT, OUTPUT_BASE_DIR
+    _try_click_any, setup_driver, SAVE_FORMAT, OUTPUT_BASE_DIR
 )
 
 BTCW_HISTORY_API_URL = "https://www.wisdomtree.com/api/fund-history/48684713?view=navHistoryModal"
@@ -134,7 +134,21 @@ def _wisdomtree_open_history_modal(driver):
 
 def _wisdomtree_fetch_history_api(driver):
     """Fetches NAV/market price history directly from WisdomTree's JSON API (reuses the browser's Cloudflare clearance)."""
-    txt = browser_fetch_text(driver, BTCW_HISTORY_API_URL)
+    js = """
+    const url = arguments[0];
+    const done = arguments[1];
+    fetch(url, {credentials: 'include', headers: {'accept': '*/*'}})
+      .then(r => r.text().then(t => done(JSON.stringify({status: r.status, text: t}))))
+      .catch(e => done(JSON.stringify({status: -1, text: 'FETCH_ERROR: ' + (e && e.message ? e.message : String(e))})));
+    """
+    raw = driver.execute_async_script(js, BTCW_HISTORY_API_URL)
+    result = json.loads(raw)
+    status = result.get("status")
+    txt = result.get("text", "")
+    print(f"[WISDOMTREE] API fetch status={status}, body_preview={txt[:200]!r}")
+    if status != 200:
+        raise RuntimeError(f"WisdomTree API returned status {status}")
+
     data = json.loads(txt)
     if not isinstance(data, list) or not data:
         raise RuntimeError("WisdomTree: API returned no data")
