@@ -1,7 +1,9 @@
 import os
 import json
 import time
+import random
 import pandas as pd
+import requests
 from urllib.parse import urlparse
 import sys
 from selenium.webdriver.support.ui import WebDriverWait
@@ -26,6 +28,25 @@ except ImportError:
         SAVE_FORMAT, OUTPUT_BASE_DIR
     )
 
+def fetch_ark_api_direct(api_url, site_url):
+    """Direct HTTP GET request to ARK JSON API, avoiding Cloudflare Turnstile on site_url."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Referer": site_url or "https://www.ark-funds.com/funds/arkb",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+    for attempt in range(3):
+        try:
+            r = requests.get(api_url, headers=headers, timeout=25)
+            if r.status_code == 200:
+                return r.json()
+            print(f"[ARK API Direct] Attempt {attempt+1} returned status code: {r.status_code}")
+        except Exception as e:
+            print(f"[ARK API Direct] Attempt {attempt+1} HTTP error: {e}")
+        time.sleep(2)
+    return None
+
 def accept_cookies_ark(driver):
     """Handles the jurisdiction disclaimer gate and cookie consent banner on the ARK website."""
     # 1. Jurisdiction/legal disclaimer gate ("You Are Entering ark-funds.com")
@@ -45,27 +66,8 @@ def process_single_etf_ark(driver, etf, site_url):
     name = etf["name"]
     base = os.path.splitext(etf["output_filename"])[0]
     api_url = etf.get("api_url")
-    print(f"\n[ETF] Processing {name} (ARK - JSON API) -> output .{SAVE_FORMAT}")
+    print(f"\n[ETF] Processing {name} (ARK - Direct JSON API) -> output .{SAVE_FORMAT}")
     print("="*50)
-
-    try:
-        driver.get(site_url); polite_sleep()
-        accept_cookies_ark(driver); polite_sleep()
-        # Wait past any Cloudflare challenge interstitial ("Just a moment...") before continuing
-        try:
-            WebDriverWait(driver, 25).until(lambda d: "just a moment" not in d.title.lower())
-        except Exception:
-            print("[ARK] Warning: page still looks like a challenge/interstitial after waiting.")
-    except Exception as e:
-        print(f"[ARK] Navigation warning: {e}")
-
-    # Diagnostic screenshot to help debug Cloudflare/consent issues in headless runs
-    try:
-        shot_path = os.path.join(OUTPUT_BASE_DIR, "debug_ark_after_navigation.png")
-        driver.save_screenshot(shot_path)
-        print(f"[ARK] Screenshot saved: {shot_path}")
-    except Exception:
-        pass
 
     if not api_url:
         msg = "api_url not defined in config."
@@ -74,44 +76,63 @@ def process_single_etf_ark(driver, etf, site_url):
 
     data = None
 
-    # Step 1: Try fetching via browser to use existing session/stealth (retry once after extra wait)
-    for attempt in range(2):
-        try:
-            txt = browser_fetch_text(driver, api_url)
-            data = json.loads(txt)
-            print("[ARK] SUCCESS JSON obtained via browser")
-            break
-        except Exception as e:
-            print(f"[ARK] Browser fetch failed (attempt {attempt+1}/2): {e}")
-            if attempt == 0:
-                time.sleep(5)
+    # Step 1: Direct HTTP request (bypasses Cloudflare Turnstile on main page URL)
+    print("[ARK] Attempting direct HTTP request to API endpoint...")
+    data = fetch_ark_api_direct(api_url, site_url)
+    if data is not None:
+        print("[ARK] SUCCESS JSON obtained via direct HTTP request")
 
-    # Step 2: Fallback to requests if browser fetch fails
-    if data is None:
-        sess = _session_from_driver(driver)
-        headers = {
-            "User-Agent": "Mozilla/5.0",
-            "Accept": "application/json, text/plain, */*",
-            "Referer": site_url,
-            "Origin": urlparse(site_url).scheme + "://" + urlparse(site_url).netloc,
-            "X-Requested-With": "XMLHttpRequest",
-            "Accept-Language": "en-US,en;q=0.9",
-        }
-        for attempt in range(MAX_RETRIES):
+    # Step 2: Fallback to browser navigation if direct HTTP failed and driver is available
+    if data is None and driver is not None:
+        print("[ARK] Direct HTTP request failed. Falling back to browser navigation...")
+        try:
+            driver.get(site_url); polite_sleep()
+            accept_cookies_ark(driver); polite_sleep()
             try:
-                polite_sleep()
-                r = sess.get(api_url, headers=headers, timeout=60)
-                if r.status_code in (429, 403, 503):
-                    ra = _retry_after_seconds(r.headers.get("Retry-After"))
-                    wait = ra if ra is not None else min(BACKOFF_MAX, (BACKOFF_BASE ** attempt) + random.random())
-                    time.sleep(wait); continue
-                r.raise_for_status()
-                data = r.json()
-                print("[ARK] SUCCESS JSON obtained via requests fallback")
+                WebDriverWait(driver, 25).until(lambda d: "just a moment" not in d.title.lower())
+            except Exception:
+                print("[ARK] Warning: page still looks like a challenge/interstitial after waiting.")
+        except Exception as e:
+            print(f"[ARK] Navigation warning: {e}")
+
+        # Try browser fetch
+        for attempt in range(2):
+            try:
+                txt = browser_fetch_text(driver, api_url)
+                data = json.loads(txt)
+                print("[ARK] SUCCESS JSON obtained via browser")
                 break
             except Exception as e:
-                wait = min(BACKOFF_MAX, (BACKOFF_BASE ** attempt) + 1.0)
-                time.sleep(wait)
+                print(f"[ARK] Browser fetch failed (attempt {attempt+1}/2): {e}")
+                if attempt == 0:
+                    time.sleep(5)
+
+        # Fallback to driver session requests
+        if data is None:
+            sess = _session_from_driver(driver)
+            headers = {
+                "User-Agent": "Mozilla/5.0",
+                "Accept": "application/json, text/plain, */*",
+                "Referer": site_url,
+                "Origin": urlparse(site_url).scheme + "://" + urlparse(site_url).netloc,
+                "X-Requested-With": "XMLHttpRequest",
+                "Accept-Language": "en-US,en;q=0.9",
+            }
+            for attempt in range(MAX_RETRIES):
+                try:
+                    polite_sleep()
+                    r = sess.get(api_url, headers=headers, timeout=60)
+                    if r.status_code in (429, 403, 503):
+                        ra = _retry_after_seconds(r.headers.get("Retry-After"))
+                        wait = ra if ra is not None else min(BACKOFF_MAX, (BACKOFF_BASE ** attempt) + random.random())
+                        time.sleep(wait); continue
+                    r.raise_for_status()
+                    data = r.json()
+                    print("[ARK] SUCCESS JSON obtained via requests fallback")
+                    break
+                except Exception as e:
+                    wait = min(BACKOFF_MAX, (BACKOFF_BASE ** attempt) + 1.0)
+                    time.sleep(wait)
 
     if data is None:
         msg = "Could not obtain JSON from ARK after multiple attempts."
@@ -180,3 +201,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
